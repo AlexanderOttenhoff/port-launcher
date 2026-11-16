@@ -48,5 +48,7 @@ Decisions and owner rules live in the auto-memory and docs/planning; this file i
 - Python heredocs that write Kotlin/C: escape `\n` inside string literals (`\\n`), or they become real newlines.
 - Module manifest JSON is hand-formatted; edit it as text, then validate with `python3 -m json.tool`.
 - GoldenEye patches 0008-0012 are ours (quick select, instant pause, complexity/difficulty, switches, tank); PD 0004-0008.
-- Commit and push master freely (the repo is public since 2026-11-17); ask before force-push, other repos, releases.
+- Code changes and features go through a branch and a PR for human review (since 2026-11-17); never push to master
+  directly, and don't merge PRs yourself. Ask before force-push, other repos, releases. Planning docs live in a
+  separate private repo (docs/planning, gitignored here) and are committed and pushed there freely.
 - Never push the local `full-history` branch here: it holds the pre-launch history (private archive repo only).
