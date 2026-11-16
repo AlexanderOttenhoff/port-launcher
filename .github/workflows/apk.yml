@@ -1,17 +1,40 @@
 # The launcher APK without game modules (they come from the module server or are built locally), plus the core's
-# unit tests and the app's JVM unit tests. Runs on every push and pull request.
+# unit tests and the app's JVM unit tests. Runs on every push and pull request, and publishes (owner, 2026-11-17:
+# nightly + tagged stable):
+#   - push to master  -> the rolling "nightly" pre-release: one release, its tag moved to the new commit and its APK
+#                        replaced (edited in place, never re-created, so watchers aren't notified on every merge;
+#                        the asset name stays port-launcher-nightly.apk so Obtainium-style URLs keep working).
+#   - push of a v* tag -> a stable GitHub Release marked latest, notes generated from the merged PRs.
+# Both are release builds signed with the one release key; versionCode = run number, so nightly and stable install
+# over each other in either direction as long as the newer one has the higher run number.
+#
+# Needs four repo secrets (the owner creates them; without them pushes fall back to the unpublished debug APK):
+#   RELEASE_KEYSTORE_B64 (base64 of the .jks), RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD.
 name: APK
 
 on:
   push:
     branches: [master]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+
+# One publish at a time per branch/tag (two quick merges must not race on the nightly release); superseded pull
+# request runs are cancelled, pushes never are.
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   apk:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: write # gh release create/edit/upload and moving the nightly tag
+    env:
+      PUBLISH: ${{ github.event_name == 'push' && secrets.RELEASE_KEYSTORE_B64 != '' }}
+      IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -29,9 +52,59 @@ jobs:
       - name: App unit tests (JVM, android/app/src/test)
         run: tools/test_app.sh
       - name: Debug APK (no modules)
-        run: tools/build_apk.sh debug
+        if: env.PUBLISH != 'true'
+        run: |
+          [ "${{ github.event_name }}" = push ] && echo "::warning::Release secrets missing: nothing published."
+          tools/build_apk.sh debug
       - uses: actions/upload-artifact@v4
+        if: env.PUBLISH != 'true'
         with:
           name: port-launcher-debug-apk
           path: bin/port-launcher-debug.apk
           retention-days: 14
+
+      - name: Signed release APK (no modules)
+        if: env.PUBLISH == 'true'
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          export RELEASE_KEYSTORE="$RUNNER_TEMP/release.jks"
+          echo "$RELEASE_KEYSTORE_B64" | base64 -d > "$RELEASE_KEYSTORE"
+          base=$(sed -n 's/.*?: "\([0-9.]*\)".*/\1/p' android/app/build.gradle.kts | head -1)
+          if [ "$IS_TAG" = true ]; then
+            version="${GITHUB_REF_NAME#v}"
+            asset="port-launcher-$version.apk"
+          else
+            version="$base-nightly.${{ github.run_number }}+${GITHUB_SHA::7}"
+            asset="port-launcher-nightly.apk"
+          fi
+          tools/build_apk.sh release -Pplm.versionCode=${{ github.run_number }} -Pplm.versionName="$version"
+          rm -f "$RELEASE_KEYSTORE"
+          # Refuse to publish an unsigned or wrongly signed APK (it could never update an installed one).
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs bin/port-launcher-release.apk
+          mv bin/port-launcher-release.apk "bin/$asset"
+          echo "ASSET=bin/$asset" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Publish stable release
+        if: env.PUBLISH == 'true' && env.IS_TAG == 'true'
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$ASSET" --verify-tag --latest --generate-notes \
+            --title "port-launcher $VERSION"
+
+      - name: Publish nightly
+        if: env.PUBLISH == 'true' && env.IS_TAG != 'true'
+        run: |
+          notes="Built from ${GITHUB_SHA::7} on master: $VERSION. Unstable and untested on hardware; stable releases are the ones marked Latest."
+          if gh release view nightly > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/nightly" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+            gh release upload nightly "$ASSET" --clobber
+            gh release edit nightly --prerelease --latest=false --notes "$notes"
+          else
+            gh release create nightly "$ASSET" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Nightly" --notes "$notes"
+          fi

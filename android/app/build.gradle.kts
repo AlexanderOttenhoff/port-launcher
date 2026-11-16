@@ -17,8 +17,11 @@ android {
         applicationId = "app.portlauncher"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI sets both (.github/workflows/apk.yml): versionCode = the workflow's run number, so every published APK,
+        // nightly or stable, outranks the one before it and Android (and Obtainium) accept it as an update; versionName
+        // = the tag for stable releases, "<base>-nightly.<run>+<sha>" for nightlies. Local builds stay at 1 / base.
+        versionCode = (findProperty("plm.versionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("plm.versionName") as String?) ?: "0.1.0"
 
         // Android arm64 is the only build target.
         ndk {
@@ -66,8 +69,22 @@ android {
         downloadable.forEach { ignoreAssetsPatterns += "<dir>$it" }
     }
 
+    // Release signing from the environment (CI decodes the keystore from repo secrets). Every published APK must carry
+    // this one key: Android refuses an update signed by any other key, so a lost or changed key means every user has
+    // to uninstall (losing saves) to update. Without the variables, release builds stay unsigned as before.
+    val keystore = System.getenv("RELEASE_KEYSTORE")?.takeIf { it.isNotEmpty() }
+    val releaseSigning = keystore?.let {
+        signingConfigs.create("release") {
+            storeFile = file(it)
+            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseSigning != null) signingConfig = releaseSigning
             optimization {
                 enable = false
             }

@@ -60,6 +60,21 @@ from your ROM: keep them private.
 | [MODULE_SPEC.md](docs/MODULE_SPEC.md) | the contract a port implements (v0, unstable) |
 | [RECOMP_MODULES.md](docs/RECOMP_MODULES.md) | how to build an N64Recomp module |
 
+## Download
+
+APKs (arm64, Android 9+) are on the [releases page](https://github.com/AlexanderOttenhoff/port-launcher/releases):
+- **Latest**: stable releases, cut from a `v*` tag after a test on hardware.
+- **Nightly**: a pre-release rebuilt on every merge to master (`port-launcher-nightly.apk`, same URL every time).
+
+Both are signed with the same key and number their versions in build order, so you can switch between them without
+reinstalling. Game modules download inside the app.
+
+Cutting a stable release (CI does the rest, [apk.yml](.github/workflows/apk.yml)):
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
 ## Building
 
 Requirements:
