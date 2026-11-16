@@ -1,0 +1,34 @@
+From 90966d6a0535a7a886860d84cb30610ac4a706e9 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 18:02:52 +1100
+Subject: [PATCH] Android: controller navigation of the port menu on by
+ default, as on consoles
+
+---
+ libultraship        | 2 +-
+ src/port/Engine.cpp | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/libultraship b/libultraship
+index eb12a4a8..db5dbfa6 160000
+--- a/libultraship
++++ b/libultraship
+@@ -1 +1 @@
+-Subproject commit eb12a4a8ffab348f98a10e212e7b97ad56bb84ea
++Subproject commit db5dbfa69b8d07003842045d2296fd73fc0e2563
+diff --git a/src/port/Engine.cpp b/src/port/Engine.cpp
+index dbe45ff7..31399890 100644
+--- a/src/port/Engine.cpp
++++ b/src/port/Engine.cpp
+@@ -349,7 +349,7 @@ void GameEngine::FinishInit() {
+     }
+     // Instance->LoadDictionary();
+     // Instance->LoadPlayerAnims();
+-#if defined(__SWITCH__) || defined(__WIIU__)
++#if defined(__SWITCH__) || defined(__WIIU__) || defined(__ANDROID__) // port launcher: handhelds too
+     CVarRegisterInteger(CVAR_IMGUI_CONTROLLER_NAV, 1); // always enable controller nav on switch/wii u
+ #endif
+ }
+-- 
+2.43.0
+

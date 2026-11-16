@@ -1,0 +1,55 @@
+From 3f0f0d8d96863b17891ed7c8cef80933ea2475c4 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 12:36:18 +1100
+Subject: [PATCH] Android: silent extraction when a launcher supplies the ROM
+ (PLM_ROM)
+
+---
+ src/port/Engine.cpp                  | 6 ++++++
+ src/port/extractor/GameExtractor.cpp | 8 +++++++-
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/src/port/Engine.cpp b/src/port/Engine.cpp
+index 0ed8ef979..fe51585cc 100644
+--- a/src/port/Engine.cpp
++++ b/src/port/Engine.cpp
+@@ -564,6 +564,12 @@ void GameEngine::RunExtract(int argc, char* argv[]) {
+                             extractStep = ES_VERIFY;
+                             continue;
+                         }
++                        // A launcher that supplies the ROM (PLM_ROM, port-launcher) gets a silent first-start
++                        // extraction: no "Generate one now?" prompt in direct boot. SelectGameFromUI picks PLM_ROM up.
++                        if (const char* launcherRom = std::getenv("PLM_ROM"); launcherRom != nullptr && *launcherRom) {
++                            promptStep = PS_FIRST;
++                            continue;
++                        }
+ #ifdef __EMSCRIPTEN__
+                         promptStep = PS_WEB_CHOICE;
+ #else
+diff --git a/src/port/extractor/GameExtractor.cpp b/src/port/extractor/GameExtractor.cpp
+index c18c5cc61..009b25c44 100644
+--- a/src/port/extractor/GameExtractor.cpp
++++ b/src/port/extractor/GameExtractor.cpp
+@@ -1,4 +1,5 @@
+ #ifdef _WIN32
++#include <cstdlib>
+ #include <Windows.h>
+ #include <shlwapi.h>
+ #include <winuser.h>
+@@ -124,7 +125,12 @@ void GameExtractor::SelectGameFromUI(std::function<void(bool)> onComplete) {
+     const std::string romPath = WebFilePicker_PickROM();
+     finish(!romPath.empty() && LoadRomFromPath(romPath));
+ #elif defined(__IOS__) || defined(__ANDROID__)
+-    // Mobile has no file dialog: the ROM is put in place beforehand.
++    // Mobile has no file dialog: the ROM is put in place beforehand, or a launcher hands it over (port-launcher sets
++    // PLM_ROM, a big-endian .z64).
++    if (const char* launcherRom = std::getenv("PLM_ROM"); launcherRom != nullptr && *launcherRom) {
++        finish(LoadRomFromPath(launcherRom));
++        return;
++    }
+     finish(LoadRomFromPath(Ship::Context::GetPathRelativeToAppDirectory("baserom.us.z64")));
+ #else
+     Ship::FileBrowserRequest req;
+-- 
+2.43.0
+

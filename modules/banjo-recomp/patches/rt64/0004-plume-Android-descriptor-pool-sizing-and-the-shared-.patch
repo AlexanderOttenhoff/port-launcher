@@ -1,0 +1,22 @@
+From a71198b8734bbd29b0c1bcec63bc612ae0c321db Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 18:47:50 +1100
+Subject: [PATCH 4/5] plume: Android descriptor pool sizing (and the shared
+ Vulkan fixes under it)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit e7aed5f409e95dd510e2247763b58b8562bed7e3)
+---
+ src/contrib/plume | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/contrib/plume b/src/contrib/plume
+index d890ac8..1dc8526 160000
+--- a/src/contrib/plume
++++ b/src/contrib/plume
+@@ -1 +1 @@
+-Subproject commit d890ac899e505fb30040e037a4037cdeca68f033
++Subproject commit 1dc8526d9dda95dd3fd5eead0ca5032ec8435edd
+-- 
+2.43.0
+

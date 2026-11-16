@@ -1,0 +1,36 @@
+From d75f832e52984a82797bfc76dbb925f8352a9f80 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 09:05:47 +1100
+Subject: [PATCH] Android NDK: no declaration right after a case label
+ (pre-C23); explicit <sstream>
+
+---
+ src/fight/chbossjinjo.c | 2 +-
+ src/port/ShipUtils.cpp  | 1 +
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/fight/chbossjinjo.c b/src/fight/chbossjinjo.c
+index 29563d29..fff45c87 100644
+--- a/src/fight/chbossjinjo.c
++++ b/src/fight/chbossjinjo.c
+@@ -279,7 +279,7 @@ void chBossJinjo_update(Actor *this){
+             }
+             break; 
+ 
+-        case BOSSJINJO_STATE_5_HIT:
++        case BOSSJINJO_STATE_5_HIT:; // [plm] a declaration (CALL_EVENT) may not follow a label before C23
+             CALL_EVENT(OnBossJinjoHitUpdate, this); // [port]
+             chfinalboss_getPosition(position_finalboss);
+             position_finalboss[1] += 100.0f;
+diff --git a/src/port/ShipUtils.cpp b/src/port/ShipUtils.cpp
+index df883397..7ed1423b 100644
+--- a/src/port/ShipUtils.cpp
++++ b/src/port/ShipUtils.cpp
+@@ -1,3 +1,4 @@
++#include <sstream> // [plm] NDK libc++ needs it explicitly
+ #include "ShipUtils.h"
+ #include "Save/SaveManager.h"
+ #include "Save/Types.h"
+-- 
+2.43.0
+

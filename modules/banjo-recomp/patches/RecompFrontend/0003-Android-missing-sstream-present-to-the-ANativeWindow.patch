@@ -1,0 +1,59 @@
+From 31690995ede8e8655c58f19bef2e954d1695a25b Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 12:59:05 +1100
+Subject: [PATCH 3/3] Android: missing <sstream>; present to the ANativeWindow
+ behind SDL's window
+
+RT64's Android window is an ANativeWindow, taken from SDL's WM info as in the
+JFG Android port. Background/foreground reattachment is still to do.
+---
+ recompui/src/base/ui_state.cpp                |  1 +
+ recompui/src/renderer/rt64_render_context.cpp | 13 ++++++++++++-
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/recompui/src/base/ui_state.cpp b/recompui/src/base/ui_state.cpp
+index 277a421..9c8dd0c 100644
+--- a/recompui/src/base/ui_state.cpp
++++ b/recompui/src/base/ui_state.cpp
+@@ -5,6 +5,7 @@
+ #include <SDL2/SDL_video.h>
+ #endif
+ #include <chrono>
++#include <sstream>
+ 
+ #include "rt64_render_hooks.h"
+ 
+diff --git a/recompui/src/renderer/rt64_render_context.cpp b/recompui/src/renderer/rt64_render_context.cpp
+index a7954c7..b9bbc02 100644
+--- a/recompui/src/renderer/rt64_render_context.cpp
++++ b/recompui/src/renderer/rt64_render_context.cpp
+@@ -4,6 +4,9 @@
+ #include <algorithm>
+ 
+ #include "hle/rt64_application.h"
++#ifdef __ANDROID__
++#include <SDL_syswm.h>
++#endif
+ #include "rt64_render_hooks.h"
+ #include "overloaded.h"
+ 
+@@ -225,7 +228,15 @@ renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::Window
+     RT64::Application::Core appCore{};
+ #if defined(_WIN32)
+     appCore.window = window_handle.window;
+-#elif defined(__linux__) || defined(__ANDROID__)
++#elif defined(__ANDROID__)
++    // RT64 presents to the ANativeWindow behind SDL's window.
++    {
++        SDL_SysWMinfo wm_info;
++        SDL_VERSION(&wm_info.version);
++        SDL_GetWindowWMInfo(window_handle, &wm_info);
++        appCore.window = wm_info.info.android.window;
++    }
++#elif defined(__linux__)
+     appCore.window = window_handle;
+ #elif defined(__APPLE__)
+     appCore.window.window = window_handle.window;
+-- 
+2.43.0
+

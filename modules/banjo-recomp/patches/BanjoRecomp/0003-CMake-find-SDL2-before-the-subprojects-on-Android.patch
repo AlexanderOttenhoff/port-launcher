@@ -1,0 +1,36 @@
+From a12664fd0d0eacd035b481049f32a2f7477482a6 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 12:56:32 +1100
+Subject: [PATCH 3/5] CMake: find SDL2 before the subprojects on Android
+
+---
+ CMakeLists.txt     | 5 +++++
+ lib/RecompFrontend | 2 +-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9dcce60..1ec2b6d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -52,6 +52,11 @@ if (RECOMP_FLATPAK)
+     add_compile_definitions(RECOMP_FLATPAK)
+ endif()
+ 
++# Android: find SDL2 before the subprojects, so they see SDL2_INCLUDE_DIRS.
++if (ANDROID)
++    find_package(SDL2 REQUIRED)
++endif()
++
+ # Android has no native file dialogs: give RT64 (and RecompFrontend) a stub nfd target.
+ if (ANDROID AND NOT TARGET nfd)
+     add_library(nfd STATIC ${CMAKE_SOURCE_DIR}/src/android/nfd_android_stub.cpp)
+diff --git a/lib/RecompFrontend b/lib/RecompFrontend
+index d0d90ba..b34fb68 160000
+--- a/lib/RecompFrontend
++++ b/lib/RecompFrontend
+@@ -1 +1 @@
+-Subproject commit d0d90ba49f46f4896aaeda362056c21b1e342561
++Subproject commit b34fb681aff931d64902fb4f15e5c26c9c76acd8
+-- 
+2.43.0
+

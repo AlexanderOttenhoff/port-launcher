@@ -1,0 +1,31 @@
+{
+  "spec": 0,
+  "id": "ghostship",
+  "name": "Ghostship",
+  "version": "3.0.0+plm.8",
+  "family": "libultraship",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/HarbourMasters/Ghostship", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "MIT",
+  "credits": "Harbour Masters and the Super Mario 64 decompilation contributors",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    { "id": "n64.super-mario-64.us", "title": "Super Mario 64", "game_code": "NSME", "region": "US", "revision": "",
+      "sha1": ["9bef1128717f958171a4afac3ed78ee2bb4e86ce"] },
+    { "id": "n64.super-mario-64.jp", "title": "Super Mario 64", "game_code": "NSMJ", "region": "JP", "revision": "",
+      "sha1": ["8a20a5c83d6ceb0f0506cfc9fa20d8f438cafe51"] }
+  ],
+  "capabilities": { "mods": ["o2r"], "texture_packs": ["o2r"], "achievements": false },
+  "mods": {
+    "sources": [
+      {
+        "label": "GameBanana",
+        "url": "https://gamebanana.com/games/24131"
+      }
+    ]
+  }
+}

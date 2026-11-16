@@ -1,0 +1,42 @@
+From 98d889fc35e3ccd580852f8e1ecd5c07dc6b3553 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 11:07:16 +1100
+Subject: [PATCH] Android: keep resources replaced by a reload alive for the
+ session (save states)
+
+---
+ src/port/ResourceHelpers.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/port/ResourceHelpers.cpp b/src/port/ResourceHelpers.cpp
+index 3addcb29..3d75bcaf 100644
+--- a/src/port/ResourceHelpers.cpp
++++ b/src/port/ResourceHelpers.cpp
+@@ -1,3 +1,4 @@
++#include <vector>
+ 
+ #include "ship/resource/ResourceManager.h"
+ #include "ship/resource/archive/Archive.h"
+@@ -294,12 +295,19 @@ static char* LoadAndRetainResource(const std::string& path, uint32_t assetId) {
+ 
+ // Reload an asset, evicting any cached version first.
+ // Used for map models whose vertex data gets modified at runtime.
++// port-launcher: resources replaced by a reload stay alive for the session. Save states restore the game's own
++// memory, which may still point at the copy that was current when the state was saved (map models are reloaded on
++// every map change); freeing it made a load after a map change crash on a dangling model pointer. Costs one copy
++// per reload (map models: a few hundred KB each), released when the game process ends.
++static std::vector<std::shared_ptr<Ship::IResource>> sReloadedResourceGraveyard;
++
+ extern "C" char* ResourceMgr_ReloadByAssetId(uint32_t assetId) {
+     std::shared_ptr<Ship::IResource> oldRef;
+     if (auto it = sResourceRefCache.find(assetId); it != sResourceRefCache.end()) {
+         oldRef = std::move(it->second);
+         sResourceRefCache.erase(it);
+     }
++    if (oldRef) sReloadedResourceGraveyard.push_back(oldRef);
+ 
+     std::string mappedPath = ResourceHelpers_GetActiveAssetPath(assetId);
+     if (!mappedPath.empty()) {
+-- 
+2.43.0
+

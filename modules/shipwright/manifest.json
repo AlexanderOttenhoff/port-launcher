@@ -1,0 +1,55 @@
+{
+  "spec": 0,
+  "id": "shipwright",
+  "name": "Ship of Harkinian",
+  "version": "9.3.1+plm.9",
+  "family": "libultraship",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/HarbourMasters/Shipwright", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "NONE",
+  "credits": "Harbour Masters and the Ocarina of Time decompilation contributors (zeldaret)",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    { "id": "n64.ocarina-of-time.us-1.0", "title": "The Legend of Zelda: Ocarina of Time", "game_code": "CZLE",
+      "region": "US", "revision": "1.0", "sha1": ["ad69c91157f6705e8ab06c79fe08aad47bb57ba7"] },
+    { "id": "n64.ocarina-of-time.us-1.1", "title": "The Legend of Zelda: Ocarina of Time", "game_code": "CZLE",
+      "region": "US", "revision": "1.1", "sha1": ["d3ecb253776cd847a5aa63d859d8c89a2f37b364"] },
+    { "id": "n64.ocarina-of-time.us-1.2", "title": "The Legend of Zelda: Ocarina of Time", "game_code": "CZLE",
+      "region": "US", "revision": "1.2", "sha1": ["41b3bdc48d98c48529219919015a1af22f5057c2"] }
+  ],
+  "capabilities": { "mods": ["o2r"], "texture_packs": ["o2r"], "achievements": false },
+  "select_to_game": true,
+  "mods": {
+    "sources": [
+      {
+        "label": "GameBanana",
+        "url": "https://gamebanana.com/games/16121"
+      }
+    ],
+    "curated": [
+      {
+        "id": "nintendo-style-controls",
+        "name": "Nintendo Style Controls",
+        "author": "trevvv",
+        "license": "CC BY-NC-ND 4.0",
+        "description": "The HUD's C-button arrows become the buttons we map them to (Nintendo layout): C-up L, C-left Y, C-right X, C-down R. Classic HD variant.",
+        "homepage": "https://gamebanana.com/mods/465012",
+        "url": "https://gamebanana.com/dl/1086863",
+        "file": "nintendo_style_controls_v2.zip",
+        "entries": [
+          "nintendo_style_controls_v2/2_nintendo_classic.otr"
+        ],
+        "replaces": [
+          "gamebanana-465012~nintendo_style_controls_v2.zip"
+        ]
+      }
+    ],
+    "preinstall": [
+      "nintendo-style-controls"
+    ]
+  }
+}

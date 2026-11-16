@@ -1,0 +1,41 @@
+From 226b722823e29fcacdd1a7a67d959737859aeac2 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 09:21:20 +1100
+Subject: [PATCH] Generate the game files straight away when a launcher
+ supplies the ROM (PLM_ROM)
+
+---
+ src/port/Engine.cpp | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/src/port/Engine.cpp b/src/port/Engine.cpp
+index 8b4dac5..96fa70b 100644
+--- a/src/port/Engine.cpp
++++ b/src/port/Engine.cpp
+@@ -1122,6 +1122,23 @@ void GameEngine::RunExtract(int argc, char* argv[]) {
+                             extractStep = ES_VERIFY;
+                             continue;
+                         }
++                        // [plm] A launcher supplied the ROM (PLM_ROM): generate the game files from it straight
++                        // away, as the "ROM found" prompt's Yes does.
++                        if (const char* plmRom = std::getenv("PLM_ROM"); plmRom != nullptr && *plmRom) {
++                            promptStep = PS_WAIT;
++                            file = plmRom;
++                            extract = GameExtractor();
++                            extract.RunStandalone(file);
++                            extracting = true;
++                            threadPool->submit_task([&]() -> void {
++                                extract.Parse(totalExtract, "sm64");
++                                extract.GenerateOTR(extractCount, "sm64");
++                                extracting = false;
++                                extractCount = totalExtract = 0;
++                                extractStep = ES_VERIFY;
++                            });
++                            continue;
++                        }
+ #ifdef __EMSCRIPTEN__
+                         promptStep = PS_WEB_CHOICE;
+ #else
+-- 
+2.43.0
+

@@ -1,0 +1,33 @@
+{
+  "spec": 0,
+  "id": "starship",
+  "name": "Starship",
+  "version": "2.0.0+plm.7",
+  "family": "libultraship",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/HarbourMasters/Starship", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "CC0-1.0",
+  "credits": "Harbour Masters and the Star Fox 64 decompilation contributors",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.star-fox-64.us-1.1",
+      "title": "Star Fox 64", "game_code": "NFXE",
+      "region": "US", "revision": "1.1",
+      "sha1": ["09f0d105f476b00efa5303a3ebc42e60a7753b7a", "d8b1088520f7c5f81433292a9258c1184afa1457"]
+    }
+  ],
+  "capabilities": { "mods": ["o2r"], "texture_packs": ["o2r"], "achievements": false },
+  "mods": {
+    "sources": [
+      {
+        "label": "GameBanana",
+        "url": "https://gamebanana.com/games/21612"
+      }
+    ]
+  }
+}

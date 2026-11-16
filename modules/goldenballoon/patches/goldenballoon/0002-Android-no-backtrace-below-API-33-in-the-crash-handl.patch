@@ -1,0 +1,29 @@
+From 5d58c20805aceafacab5ac2348f7d212185ad2e3 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 17:50:08 +1100
+Subject: [PATCH] Android: no backtrace() below API 33 in the crash handler
+ (port launcher)
+
+---
+ platform/main_pc.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/platform/main_pc.c b/platform/main_pc.c
+index 01c71cdf..5f0c1839 100644
+--- a/platform/main_pc.c
++++ b/platform/main_pc.c
+@@ -130,6 +130,11 @@ static void mdkr_crash_handler(int sig) {
+         n = snprintf(line, sizeof(line), "  #%u %p\n", (unsigned) i, bt[i]);
+         if (n > 0) mdkr_crash_write(line, (unsigned) n);
+     }
++#elif defined(__ANDROID__) && __ANDROID_API__ < 33
++    /* Port launcher: bionic declares backtrace() only from API 33 (we build for 28); the host's debuggerd prints
++     * the native stack to logcat anyway. */
++    (void) bt;
++    fprintf(stderr, "\n[CRASH] signal %d (backtrace in logcat)\n", sig);
+ #else
+     int n = backtrace(bt, 40);
+     fprintf(stderr, "\n[CRASH] signal %d - backtrace (%d frames):\n", sig, n);
+-- 
+2.43.0
+

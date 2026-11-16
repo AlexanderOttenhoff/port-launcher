@@ -1,0 +1,48 @@
+{
+  "spec": 0,
+  "id": "mm64-recomp",
+  "name": "Mega Man 64: Recompiled",
+  "version": "0.9.1+plm.1",
+  "family": "n64recomp",
+  "native_launcher": true,
+  "upstream": {
+    "repo": "https://github.com/MegaMan64Recomp/MegaMan64Recompiled",
+    "commit": "@UPSTREAM_COMMIT@"
+  },
+  "license": "GPL-3.0-only",
+  "host": {
+    "type": "sdl2",
+    "sdl": "2.32"
+  },
+  "abi": 0,
+  "platforms": [
+    "android-arm64"
+  ],
+  "graphics": {
+    "api": "vulkan",
+    "min_version": "1.2"
+  },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.mega-man-64.us",
+      "title": "Mega Man 64",
+      "game_code": "NM6E",
+      "region": "US",
+      "revision": "",
+      "sha1": [
+        "f24fe0aff01aec018e2dd558ec4f076cf328129f"
+      ]
+    }
+  ],
+  "capabilities": {
+    "mods": [
+      "nrm"
+    ],
+    "texture_packs": [
+      "rtz"
+    ],
+    "achievements": false
+  },
+  "maturity": "experimental"
+}

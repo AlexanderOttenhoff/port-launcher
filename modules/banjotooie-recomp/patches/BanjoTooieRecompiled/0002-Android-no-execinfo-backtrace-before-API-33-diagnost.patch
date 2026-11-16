@@ -1,0 +1,63 @@
+From af6caa73b22440d3b669c650b489e3d5e4822194 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 19:53:27 +1100
+Subject: [PATCH] Android: no execinfo backtrace before API 33 (diagnostics
+ only)
+
+---
+ lib/N64ModernRuntime | 2 +-
+ lib/N64Recomp        | 2 +-
+ lib/RecompFrontend   | 2 +-
+ lib/rt64             | 2 +-
+ src/recomp_api.cpp   | 7 +++++++
+ 5 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/lib/N64ModernRuntime b/lib/N64ModernRuntime
+index cdf5abb..73868f5 160000
+--- a/lib/N64ModernRuntime
++++ b/lib/N64ModernRuntime
+@@ -1 +1 @@
+-Subproject commit cdf5abbd5026fef5c364c676e4667c45e42b6863
++Subproject commit 73868f58c50006414c95c7ecab1f5048a2e7678d
+diff --git a/lib/N64Recomp b/lib/N64Recomp
+index ffb39cd..7bad401 160000
+--- a/lib/N64Recomp
++++ b/lib/N64Recomp
+@@ -1 +1 @@
+-Subproject commit ffb39cdad1da5de07eaaa48bd1db4a89a7986771
++Subproject commit 7bad4013f9440ba1f6bf149e686b2bcd4b42ffe4
+diff --git a/lib/RecompFrontend b/lib/RecompFrontend
+index b1a1477..5984055 160000
+--- a/lib/RecompFrontend
++++ b/lib/RecompFrontend
+@@ -1 +1 @@
+-Subproject commit b1a1477c6556aeb7ed45defbfb5924f721efebc1
++Subproject commit 598405583b9dc67eb99aac81873fb55bd34625b4
+diff --git a/lib/rt64 b/lib/rt64
+index 4337374..cf8cced 160000
+--- a/lib/rt64
++++ b/lib/rt64
+@@ -1 +1 @@
+-Subproject commit 43373749dac9bbc1b653e6a02aed40a9e1783bed
++Subproject commit cf8ccedc14e19a60111e4cc9d3541bae5ecfa671
+diff --git a/src/recomp_api.cpp b/src/recomp_api.cpp
+index fbb198f..f598131 100644
+--- a/src/recomp_api.cpp
++++ b/src/recomp_api.cpp
+@@ -80,6 +80,13 @@ inline unsigned short host_backtrace(void** frames, unsigned count) {
+ inline uintptr_t host_image_base() {
+     return reinterpret_cast<uintptr_t>(&__ImageBase);
+ }
++#elif defined(__ANDROID__) && __ANDROID_API__ < 33
++// backtrace() needs Android API 33; these traces are diagnostics only.
++inline unsigned short host_backtrace(void**, unsigned) {
++    return 0;
++}
++
++inline uintptr_t host_image_base() { return 0; }
+ #else
+ #include <execinfo.h>
+ 
+-- 
+2.43.0
+

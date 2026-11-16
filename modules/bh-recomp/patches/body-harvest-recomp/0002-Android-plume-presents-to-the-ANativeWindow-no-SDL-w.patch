@@ -1,0 +1,79 @@
+From c9a50532a14d9375cb87934fc50610db38333206 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <alexander.ottenhoff@gmail.com>
+Date: Sat, 14 Nov 2026 12:42:52 +1100
+Subject: [PATCH 2/3] Android: plume presents to the ANativeWindow (no
+ SDL-window plume definitions on Android); SDL headers for subprojects
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ CMakeLists.txt   | 13 ++++++++++++-
+ src/renderer.cpp | 15 +++++++++++++++
+ 2 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7158c8d..0f15c0a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -101,7 +101,13 @@ if(BH_WITH_RUNTIME)
+     # compile against the X11 definition, and a target that compiled against
+     # the wrong one would be an ABI mismatch at the call that passes the
+     # handle across rather than an error.
+-    if(UNIX AND NOT APPLE)
++    #
++    # Not on Android (port-launcher module): there plume's RenderWindow is the
++    # ANativeWindow* behind SDL's window (our plume/RT64 Android patches), and
++    # the renderers fetch it with SDL_GetWindowWMInfo (src/renderer.cpp,
++    # RecompFrontend's rt64_render_context.cpp). With the SDL-window definitions
++    # plume would try SDL_Vulkan_CreateSurface on an ANativeWindow*.
++    if(UNIX AND NOT APPLE AND NOT ANDROID)
+         set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
+         add_compile_definitions(PLUME_SDL_VULKAN_ENABLED RT64_SDL_WINDOW_VULKAN)
+     endif()
+@@ -115,6 +121,11 @@ if(BH_WITH_RUNTIME)
+         target_include_directories(nfd PUBLIC
+             "${BH_LIB_DIR}/RT64/src/contrib/nativefiledialog-extended/src/include")
+     endif()
++    # SDL's headers for every subproject on Android (the library links SDL2
++    # itself; the subprojects' own find_package doesn't reach every target).
++    if(ANDROID)
++        include_directories(${SDL2_INCLUDE_DIRS})
++    endif()
+ 
+     add_subdirectory("${BH_LIB_DIR}/RT64" EXCLUDE_FROM_ALL)
+     add_subdirectory("${BH_LIB_DIR}/N64ModernRuntime" EXCLUDE_FROM_ALL)
+diff --git a/src/renderer.cpp b/src/renderer.cpp
+index 8f4d0c0..f0ca036 100644
+--- a/src/renderer.cpp
++++ b/src/renderer.cpp
+@@ -31,6 +31,11 @@
+ 
+ #include "hle/rt64_application.h"
+ 
++#if defined(__ANDROID__)
++#   include <SDL.h>
++#   include <SDL_syswm.h>
++#endif
++
+ namespace {
+ 
+ // Strip the MIPS segment bits from a virtual address to get an RDRAM offset.
+@@ -92,6 +97,16 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
+     core.window.view = window_handle.view;
+ #elif defined(_WIN32)
+     core.window = window_handle.window;
++#elif defined(__ANDROID__)
++    // Android (port-launcher module): ultramodern's handle is still the
++    // SDL_Window*, but plume presents to the ANativeWindow behind it (same as
++    // RecompFrontend's rt64_render_context.cpp on Android).
++    {
++        SDL_SysWMinfo wm_info;
++        SDL_VERSION(&wm_info.version);
++        SDL_GetWindowWMInfo(window_handle, &wm_info);
++        core.window = wm_info.info.android.window;
++    }
+ #else
+     core.window = window_handle;
+ #endif
+-- 
+2.43.0
+

@@ -1,0 +1,45 @@
+From 61e4ef362f907e2674ef4dda48dcf7f9f1325e76 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 12:04:08 +1100
+Subject: [PATCH 2/2] Android: Back/Select doesn't open the menu
+
+---
+ src/ship/window/gui/Gui.cpp | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/src/ship/window/gui/Gui.cpp b/src/ship/window/gui/Gui.cpp
+index 47cf44e8..54cf7ef8 100644
+--- a/src/ship/window/gui/Gui.cpp
++++ b/src/ship/window/gui/Gui.cpp
+@@ -20,6 +20,13 @@
+ namespace Ship {
+ #define TOGGLE_BTN ImGuiKey_F1
+ #define TOGGLE_PAD_BTN ImGuiKey_GamepadBack
++// Port launcher: on Android the controller's Back/Select no longer opens the port's own menu; the launcher's menu
++// replaces it (the port's menu code stays, for reference).
++#ifdef __ANDROID__
++#define PLM_PAD_TOGGLE_PRESSED() false
++#else
++#define PLM_PAD_TOGGLE_PRESSED() ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false)
++#endif
+ 
+ Gui::Gui(std::vector<std::shared_ptr<GuiWindow>> guiWindows) : mNeedsConsoleVariableSave(false) {
+     mGameOverlay = std::make_shared<GameOverlay>();
+@@ -242,11 +249,11 @@ void Gui::DrawMenu() {
+     ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None | ImGuiDockNodeFlags_NoDockingInCentralNode);
+ 
+     if (ImGui::IsKeyPressed(TOGGLE_BTN, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+-        (ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false) &&
++        (PLM_PAD_TOGGLE_PRESSED() &&
+          Ship::Context::GetRawInstance()->GetConsoleVariables()->GetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0))) {
+-        if ((ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false)) && GetMenu()) {
++        if ((ImGui::IsKeyPressed(ImGuiKey_Escape, false) || PLM_PAD_TOGGLE_PRESSED()) && GetMenu()) {
+             GetMenu()->ToggleVisibility();
+-        } else if ((ImGui::IsKeyPressed(TOGGLE_BTN, false) || ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false)) &&
++        } else if ((ImGui::IsKeyPressed(TOGGLE_BTN, false) || PLM_PAD_TOGGLE_PRESSED()) &&
+                    GetMenuBar()) {
+             GetMenuBar()->ToggleVisibility();
+         }
+-- 
+2.43.0
+

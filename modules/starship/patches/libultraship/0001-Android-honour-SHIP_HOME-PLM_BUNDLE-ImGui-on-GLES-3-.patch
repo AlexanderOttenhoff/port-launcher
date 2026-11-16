@@ -1,0 +1,53 @@
+From c15bbf39804780b501f1e3ad21d0b117be53c6e4 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 08:32:35 +1100
+Subject: [PATCH] Android: honour SHIP_HOME/PLM_BUNDLE; ImGui on GLES 3 like
+ Linux
+
+---
+ cmake/dependencies/android.cmake | 5 +++++
+ src/Context.cpp                  | 8 ++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/cmake/dependencies/android.cmake b/cmake/dependencies/android.cmake
+index 3f64ab1e..2a52021c 100644
+--- a/cmake/dependencies/android.cmake
++++ b/cmake/dependencies/android.cmake
+@@ -12,3 +12,8 @@ if (NOT ${SDL2_FOUND})
+ endif()
+ 
+ target_link_libraries(ImGui PUBLIC SDL2::SDL2)
++# As on Linux: ImGui's OpenGL backend in its ES 3 flavour when the game renders with GLES.
++if (USE_OPENGLES)
++    target_link_libraries(ImGui PUBLIC GLESv3)
++    add_compile_definitions(IMGUI_IMPL_OPENGL_ES3)
++endif()
+diff --git a/src/Context.cpp b/src/Context.cpp
+index dcb19c86..80bacb5a 100644
+--- a/src/Context.cpp
++++ b/src/Context.cpp
+@@ -399,6 +399,10 @@ std::string Context::GetShortName() {
+ 
+ std::string Context::GetAppBundlePath() {
+ #if defined(__ANDROID__)
++    // A launcher may choose the read-only bundle directory (port-launcher: the module's data dir).
++    if (const char* bundle = std::getenv("PLM_BUNDLE"); bundle != nullptr && *bundle) {
++        return bundle;
++    }
+     const char* externaldir = SDL_AndroidGetExternalStoragePath();
+     if (externaldir != NULL) {
+         return externaldir;
+@@ -457,6 +461,10 @@ std::string Context::GetAppBundlePath() {
+ 
+ std::string Context::GetAppDirectoryPath(std::string appName) {
+ #if defined(__ANDROID__)
++    // A launcher may choose the directory (port-launcher points SHIP_HOME at the module's config dir).
++    if (const char* shipHome = std::getenv("SHIP_HOME"); shipHome != nullptr && *shipHome) {
++        return shipHome;
++    }
+     const char* externaldir = SDL_AndroidGetExternalStoragePath();
+     if (externaldir != NULL) {
+         return externaldir;
+-- 
+2.43.0
+

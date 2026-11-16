@@ -1,0 +1,34 @@
+From d979f967b9124abc673f7c63481ba5d32a1343a0 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 18:02:52 +1100
+Subject: [PATCH] Android: controller navigation of the port menu on by
+ default, as on consoles
+
+---
+ libultraship        | 2 +-
+ src/port/Engine.cpp | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/libultraship b/libultraship
+index 9c2789ea..f25c4ee3 160000
+--- a/libultraship
++++ b/libultraship
+@@ -1 +1 @@
+-Subproject commit 9c2789ea7fbd639b6b5af4750761d1c16565f776
++Subproject commit f25c4ee3c5b30e2b09b824301e548c931b981995
+diff --git a/src/port/Engine.cpp b/src/port/Engine.cpp
+index 96fa70b6..a05e8c34 100644
+--- a/src/port/Engine.cpp
++++ b/src/port/Engine.cpp
+@@ -224,7 +224,7 @@ GameEngine::GameEngine() : dictionary(nullptr) {
+     auto consoleVariables = std::make_shared<Ship::ConsoleVariable>(config);
+     context->GetChildren().Add(consoleVariables);
+     CVarSetConsoleVariable(consoleVariables);
+-#if defined(__SWITCH__) || defined(__WIIU__) || defined(__WINRT__)
++#if defined(__SWITCH__) || defined(__WIIU__) || defined(__WINRT__) || defined(__ANDROID__) // port launcher: handhelds too
+     CVarRegisterInteger(CVAR_IMGUI_CONTROLLER_NAV, 1); // always enable controller nav on consoles
+ #endif
+ 
+-- 
+2.43.0
+

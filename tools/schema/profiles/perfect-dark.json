@@ -1,0 +1,8 @@
+[
+ {"id": "modern", "label": "Modern",
+  "detail": "Our pick: a steady crosshair (no sway, like our GoldenEye), the crosshair coloured by health, detail textures, and Start skipping the intro. Uncapped tick rate is left out: it is experimental in the port.",
+  "values": {
+   "Game.Player1.CrosshairSway": "0", "Game.Player1.CrosshairHealth": "1",
+   "Video.DetailTextures": "1", "Game.SkipIntro": "1"
+  }}
+]

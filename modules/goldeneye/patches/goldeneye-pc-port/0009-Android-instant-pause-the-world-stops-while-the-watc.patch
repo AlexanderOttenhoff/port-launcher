@@ -1,0 +1,158 @@
+From 5bba78c51abb618366b6c2d3fef51be1556ccb05 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Mon, 16 Nov 2026 10:26:23 +1100
+Subject: [PATCH] Android: instant pause (the world stops while the watch comes
+ up and goes away, not only while it's open)
+
+---
+ src/boss.c    | 12 ++++++++
+ src/game/lv.c | 76 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 88 insertions(+)
+
+diff --git a/src/boss.c b/src/boss.c
+index f34023cc..5b3aa54d 100644
+--- a/src/boss.c
++++ b/src/boss.c
+@@ -712,7 +712,19 @@ void bossMainloop(void)
+                                     localPlayer = g_CurrentPlayer;
+                                     viSetViewPosition(localPlayer->viewleft, localPlayer->viewtop);
+ 
++#ifdef __ANDROID__
++                                    {
++                                        /* [port launcher] instant pause: the watch animation runs on real time
++                                         * while the world's clock is held at zero (lv.c, plmWatchClockBegin) */
++                                        extern void plmWatchClockBegin(void);
++                                        extern void plmWatchClockEnd(void);
++                                        plmWatchClockBegin();
++                                        lvlViewMoveTick();
++                                        plmWatchClockEnd();
++                                    }
++#else
+                                     lvlViewMoveTick();
++#endif
+                                 }
+                             }
+ 
+diff --git a/src/game/lv.c b/src/game/lv.c
+index 75017dc1..e0af14a9 100644
+--- a/src/game/lv.c
++++ b/src/game/lv.c
+@@ -779,6 +779,11 @@ Gfx *lvlPortalDebug7F0BDF10(Gfx *gdl)
+  * Address 0x7F0BE30C (VERSION_US).
+  */
+ 
++#ifdef __ANDROID__
++static void plmWatchFreezeRecheck(void); /* instant pause, below lvlManageMpGame */
++void plmWatchClockBegin(void);
++void plmWatchClockEnd(void);
++#endif
+ Gfx* lvlRender(Gfx* DL)
+ {
+     gSPSegment(DL++, SPSEGMENT_PHYSICAL, NULL);
+@@ -833,6 +838,9 @@ Gfx* lvlRender(Gfx* DL)
+             DL = viSetupScreensForNumPlayers(DL);
+             DL = skyRender(DL);
+             bgRoomVisibilityRelated();
++#ifdef __ANDROID__
++            plmWatchFreezeRecheck();
++#endif
+             propsTick();
+             chraiUpdateOnscreenPropCount();
+             chrpropUpdateAutoaimTarget();
+@@ -844,7 +852,13 @@ Gfx* lvlRender(Gfx* DL)
+                 attempt_reload_item_in_hand(GUNLEFT);
+             }
+ 
++#ifdef __ANDROID__
++            plmWatchClockBegin();
+             propsTickPlayer();
++            plmWatchClockEnd();
++#else
++            propsTickPlayer();
++#endif
+             DL = bgLevelRender(DL);
+ 
+             if (get_debug_portal_flag())
+@@ -1067,10 +1081,67 @@ void lvlSetMultipliersForDifficulty(void)
+  */
+ #ifdef __ANDROID__
+ s32 plmWeaponListIsOpen(void); /* plm_weaponlist.c */
++
++/* [port launcher] Instant pause (owner 2026-11-16): no vulnerable frames while the watch comes up or goes away.
++ * The game stops the world only while the watch is fully open (state 5 locks the controls, which zeroes the clock
++ * below); the raise (states 1-4, and 0xd, waiting for the hands to be free after Start) and the lower (6-8) ran on the
++ * live clock, so enemies kept shooting. Now the world's clock is zero for those states too. The watch animation
++ * itself (and Bond's hands, which must lower a left-hand gun before the watch comes up) advances on that same clock,
++ * so the player's two passes get the real clock back for their duration: lvlViewMoveTick (MoveBond, the watch state
++ * machine) in boss.c, and propsTickPlayer in lvlRender (plmWatchClockBegin/End). Solo only, like the watch. */
++static s32 plmRealClock = 0;
++static s32 plmWatchFrozen = 0;
++
++static s32 plmWatchTransitionFreeze(void)
++{
++    s32 state;
++    if (getPlayerCount() != 1 || g_CurrentStageToLoad == LEVELID_TITLE || g_CurrentPlayer == NULL)
++    {
++        return 0;
++    }
++    state = g_CurrentPlayer->watch_animation_state;
++    return (state >= WATCH_ANIMATION_0x1 && state <= WATCH_ANIMATION_0x4)
++        || (state >= WATCH_ANIMATION_0x6 && state <= WATCH_ANIMATION_0x8)
++        || state == WATCH_ANIMATION_0xd;
++}
++
++void plmWatchClockBegin(void)
++{
++    if (plmWatchFrozen)
++    {
++        g_ClockTimer = plmRealClock;
++        g_GlobalTimerDelta = (f32) plmRealClock;
++    }
++}
++
++/* Again just before the world's update: Start is read in MoveBond, after the clock was set for this frame, so
++ * without this the world would get one more live frame after the press. */
++static void plmWatchFreezeRecheck(void)
++{
++    if (!plmWatchFrozen && g_ClockTimer > 0 && !g_ControlsLockedFlag && !plmWeaponListIsOpen() && plmWatchTransitionFreeze())
++    {
++        plmWatchFrozen = 1;
++        g_ClockTimer = 0;
++        g_GlobalTimerDelta = 0.0f;
++    }
++}
++
++void plmWatchClockEnd(void)
++{
++    if (plmWatchFrozen)
++    {
++        g_ClockTimer = 0;
++        g_GlobalTimerDelta = 0.0f;
++    }
++}
+ #endif
+ void lvlManageMpGame(void)
+ {
+     tlbmanageResetCurrentEntriesCount();
++#ifdef __ANDROID__
++    plmRealClock = speedgraphframes;
++    plmWatchFrozen = 0;
++#endif
+ 
+     if (g_ControlsLockedFlag != 0)
+     {
+@@ -1087,6 +1158,11 @@ void lvlManageMpGame(void)
+     {
+         g_ClockTimer = 0;
+     }
++    else if (plmWatchTransitionFreeze())
++    {
++        plmWatchFrozen = 1;
++        g_ClockTimer = 0;
++    }
+ #endif
+     else
+     {
+-- 
+2.43.0
+

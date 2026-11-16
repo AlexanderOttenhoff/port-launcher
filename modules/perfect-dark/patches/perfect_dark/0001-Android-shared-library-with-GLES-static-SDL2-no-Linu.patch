@@ -1,0 +1,105 @@
+From 6ef0529b055febbf794bbe54329f4b07c582a3c5 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 17:37:01 +1100
+Subject: [PATCH] Android: shared library with GLES, static SDL2; no Linux
+ crash handler (needs API 33)
+
+---
+ CMakeLists.txt   | 20 +++++++++++++++++++-
+ port/src/crash.c |  6 +++---
+ 2 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index f5bb7eb83..09a34e31b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -67,6 +67,9 @@ elseif(APPLE)
+ elseif(NINTENDO_SWITCH)
+   # Switch
+   set(TARGET_OS "nswitch")
++elseif(ANDROID)
++  # Android: the game is a shared library that SDL's Java activity loads
++  set(TARGET_OS "android")
+ elseif(UNIX)
+   # Generic *nix; assume Linux
+   set(TARGET_OS "linux")
+@@ -211,7 +214,14 @@ endif()
+ set(LIBS )
+ 
+ # SDL2
++if(ANDROID)
++  # a statically linked SDL2 built for the app (SDL2_DIR points at its CMake config)
++  find_package(SDL2 REQUIRED CONFIG)
++  get_target_property(SDL2_INCLUDE_DIR SDL2::SDL2-static INTERFACE_INCLUDE_DIRECTORIES)
++  set(SDL2_LIBRARY SDL2::SDL2-static)
++else()
+ find_package(SDL2 REQUIRED)
++endif()
+ if(NINTENDO_SWITCH)
+   if(NOT SDL2_LIBRARY OR NOT SDL2_INCLUDE_DIR)
+     # sometimes FindSDL2 just wants us to suffer and does not set these
+@@ -235,6 +245,8 @@ if(NOT GL_LIBRARY)
+     set(GL_LIBRARY opengl32)
+   elseif(NINTENDO_SWITCH)
+     set(GL_LIBRARY EGL glapi drm_nouveau)
++  elseif(ANDROID)
++    set(GL_LIBRARY GLESv3 EGL)
+   elseif(APPLE)
+     set(GL_LIBRARY "-framework OpenGL")
+   else()
+@@ -249,6 +261,8 @@ if(NOT EXTRA_LIBRARIES)
+     set(EXTRA_LIBRARIES dbghelp -static-libstdc++)
+   elseif(NINTENDO_SWITCH)
+     set(EXTRA_LIBRARIES stdc++ pthread)
++  elseif(ANDROID)
++    set(EXTRA_LIBRARIES android log m dl)
+   else()
+     set(EXTRA_LIBRARIES stdc++ m dl)
+   endif()
+@@ -341,7 +355,11 @@ add_custom_target(pd_headers ALL DEPENDS ${JSON_HEADERS})
+ # Game target
+ 
+ set(BIN_NAME "pd${BIN_REGION}.${TARGET_ARCH}")
+-add_executable(pd ${SRC})
++if(ANDROID)
++  add_library(pd SHARED ${SRC})
++else()
++  add_executable(pd ${SRC})
++endif()
+ add_dependencies(pd pd_headers)
+ target_link_libraries(pd ${LIBS})
+ set_target_properties(pd PROPERTIES OUTPUT_NAME "${BIN_NAME}")
+diff --git a/port/src/crash.c b/port/src/crash.c
+index dc0536589..88dc1f98e 100644
+--- a/port/src/crash.c
++++ b/port/src/crash.c
+@@ -154,7 +154,7 @@ static long __stdcall crashHandler(PEXCEPTION_POINTERS exinfo)
+ 	return EXCEPTION_CONTINUE_EXECUTION;
+ }
+ 
+-#elif defined(PLATFORM_LINUX)
++#elif defined(PLATFORM_LINUX) && !defined(__ANDROID__) // no execinfo.h before Android API 33
+ 
+ #include <ucontext.h>
+ #include <signal.h>
+@@ -310,7 +310,7 @@ void crashInit(void)
+ 	SetErrorMode(SEM_FAILCRITICALERRORS);
+ 	prevExFilter = SetUnhandledExceptionFilter(crashHandler);
+ 	g_CrashEnabled = 1;
+-#elif defined(PLATFORM_LINUX)
++#elif defined(PLATFORM_LINUX) && !defined(__ANDROID__) // no execinfo.h before Android API 33
+ 	struct sigaction sigact = { 0 };
+ 	sigact.sa_flags = SA_SIGINFO | SA_ONSTACK;
+ 	sigact.sa_sigaction = crashHandler;
+@@ -331,7 +331,7 @@ void crashShutdown(void)
+ 	if (prevExFilter) {
+ 		SetUnhandledExceptionFilter(prevExFilter);
+ 	}
+-#elif defined(PLATFORM_LINUX)
++#elif defined(PLATFORM_LINUX) && !defined(__ANDROID__) // no execinfo.h before Android API 33
+ 	sigaction(SIGSEGV, &prevSigAction, NULL);
+ 	sigaction(SIGABRT, &prevSigAction, NULL);
+ 	sigaction(SIGBUS,  &prevSigAction, NULL);
+-- 
+2.43.0
+

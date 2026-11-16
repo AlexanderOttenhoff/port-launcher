@@ -1,0 +1,51 @@
+From 7c75bcea35fab403f277fe322b815fbb46a0de8b Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 15:18:15 +1100
+Subject: [PATCH] Android: steady aim also stills the standing view's breathing
+ sway
+
+---
+ port/src/input.c    |  4 +++-
+ src/game/bondhead.c | 11 +++++++++++
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/port/src/input.c b/port/src/input.c
+index 6f7b2dd3..d4a379fc 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -1030,7 +1030,9 @@ static int aimStyleLegacy = 0;   /* Input.AimStyle (D333, superseded) */
+ /* Port launcher: its "Steady aim" option (default on = Centred) overrides the
+  * saved Input.AimMode, at launch and live from its in-game menu. -1 = no override. */
+ static volatile int plmAimModeOverride = -1;
+-void inputPlmSetAimMode(int mode) { plmAimModeOverride = mode; }
++/* Steady aim also stills the standing view's idle "breathing" sway (bondhead.c). */
++volatile int g_PlmSteadyView = 0;
++void inputPlmSetAimMode(int mode) { plmAimModeOverride = mode; g_PlmSteadyView = (mode == 1); }
+ #endif
+ 
+ static int aimModeGet(void)
+diff --git a/src/game/bondhead.c b/src/game/bondhead.c
+index 349f6fdd..0b98c674 100644
+--- a/src/game/bondhead.c
++++ b/src/game/bondhead.c
+@@ -403,6 +403,17 @@ void bheadUpdate(f32 percent_speed, f32 speedsideways)
+ 
+         upvel.f[0] *= (1.0f + (5.0f * bondviewGetBondBreathing()));
+         upvel.f[2] *= (1.0f + (5.0f * bondviewGetBondBreathing()));
++#ifdef __ANDROID__
++        {
++            /* Port launcher "Steady aim": no idle breathing sway while standing; the view stays level and centred.
++             * The idle rolls above still draw their random numbers, so nothing else that uses them changes. */
++            extern volatile int g_PlmSteadyView;
++            if (g_PlmSteadyView) {
++                lookvel.f[0] = 0.0f; lookvel.f[1] = 0.0f; lookvel.f[2] = 1.0f;
++                upvel.f[0] = 0.0f; upvel.f[1] = 1.0f; upvel.f[2] = 0.0f;
++            }
++        }
++#endif
+     }
+ 
+     bheadUpdatePos(&headpos);
+-- 
+2.43.0
+

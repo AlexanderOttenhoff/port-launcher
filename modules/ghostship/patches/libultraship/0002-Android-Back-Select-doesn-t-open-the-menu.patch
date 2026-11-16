@@ -1,0 +1,39 @@
+From f25c4ee3c5b30e2b09b824301e548c931b981995 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 15:36:04 +1100
+Subject: [PATCH] Android: Back/Select doesn't open the menu
+
+---
+ src/ship/window/gui/Gui.cpp | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/ship/window/gui/Gui.cpp b/src/ship/window/gui/Gui.cpp
+index 36dfdd5..8b33317 100644
+--- a/src/ship/window/gui/Gui.cpp
++++ b/src/ship/window/gui/Gui.cpp
+@@ -24,6 +24,13 @@
+ namespace Ship {
+ #define TOGGLE_BTN ImGuiKey_F1
+ #define TOGGLE_PAD_BTN ImGuiKey_GamepadBack
++// Port launcher: on Android the controller's Back/Select no longer opens the port's own menu; the launcher's menu
++// replaces it (the port's menu code stays, for reference).
++#ifdef __ANDROID__
++#define PLM_PAD_TOGGLE_PRESSED() false
++#else
++#define PLM_PAD_TOGGLE_PRESSED() ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false)
++#endif
+ 
+ Gui::Gui(std::vector<std::shared_ptr<GuiWindow>> guiWindows, std::shared_ptr<Context> context,
+          std::shared_ptr<ConsoleVariable> consoleVariable, std::shared_ptr<Window> window,
+@@ -259,7 +266,7 @@ void Gui::DrawMenu() {
+     const auto menuKey =
+         static_cast<ImGuiKey>(mConsoleVariable->GetInteger(CVAR_MENU_TOGGLE_KEY, static_cast<int32_t>(ImGuiKey_Escape)));
+     const bool menuKeyPressed = menuKey != ImGuiKey_None && ImGui::IsKeyPressed(menuKey, false);
+-    const bool padPressed = ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false) &&
++    const bool padPressed = PLM_PAD_TOGGLE_PRESSED() &&
+                             (mConsoleVariable->GetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) ||
+                              mConsoleVariable->GetInteger(CVAR_MENU_PAD_TOGGLE, 1));
+ 
+-- 
+2.43.0
+

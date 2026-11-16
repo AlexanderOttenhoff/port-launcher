@@ -1,0 +1,87 @@
+From b0a1640bde1d9e960c36a72c785a1ff05bc1b0b8 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 22:21:48 +1100
+Subject: [PATCH] Android: frame interpolation keeps child records balanced
+ when skips turn recording back on
+
+---
+ src/port/interpolation/FrameInterpolation.cpp | 28 +++++++++++++++++--
+ 1 file changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/src/port/interpolation/FrameInterpolation.cpp b/src/port/interpolation/FrameInterpolation.cpp
+index 8d6c31ce..10f56d2a 100644
+--- a/src/port/interpolation/FrameInterpolation.cpp
++++ b/src/port/interpolation/FrameInterpolation.cpp
+@@ -165,6 +165,16 @@ struct Recording {
+ 
+ bool is_recording;
+ vector<Path*> current_path;
++// port-launcher (RP6 2026-11-13 crash: FrameInterpolation_RecordOpenChild <- Effect_DrawAll <- Display_Update, null
++// Path at current_path.back()). Draw code brackets one-off skips with ShouldInterpolateFrame(false) ... (true), and
++// (true) used to switch recording ON unconditionally, even in a frame StartRecord chose not to record (interpolation
++// at 20 fps, our "Original" frame rate) or inside a region an outer skip had turned off (Display_Update's camera
++// "bigJump" skip, forced on every pause/unpause). A child opened while recording was off (no push) and closed after a
++// nested (true) then popped its PARENT; enough of those popped the root, and the next RecordOpenChild read the slot
++// before the vector's buffer (zero) as the current Path. Now (true) only restores what StartRecord decided for the
++// frame, and each close pops only if its own open pushed.
++bool frame_recording_allowed;
++vector<bool> open_child_pushed;
+ uint32_t camera_epoch;
+ uint32_t previous_camera_epoch;
+ Recording current_recording;
+@@ -416,7 +426,7 @@ bool camera_interpolation = true;
+ 
+ void FrameInterpolation_ShouldInterpolateFrame(bool shouldInterpolate) {
+     // camera_interpolation = shouldInterpolate;
+-    is_recording = shouldInterpolate;
++    is_recording = shouldInterpolate && frame_recording_allowed;  // port-launcher: see frame_recording_allowed
+ }
+ 
+ void FrameInterpolation_StartRecord(void) {
+@@ -424,6 +434,8 @@ void FrameInterpolation_StartRecord(void) {
+     current_recording = {};
+     current_path.clear();
+     current_path.push_back(&current_recording.root_path);
++    open_child_pushed.clear();
++    frame_recording_allowed = false;
+     if (!camera_interpolation) {
+         // default to interpolating
+         camera_interpolation = true;
+@@ -432,6 +444,7 @@ void FrameInterpolation_StartRecord(void) {
+     }
+     if (GameEngine::GetInterpolationFPS() != 20) {
+         is_recording = true;
++        frame_recording_allowed = true;
+     }
+ }
+ 
+@@ -441,7 +454,11 @@ void FrameInterpolation_StopRecord(void) {
+ }
+ 
+ void FrameInterpolation_RecordOpenChild(const void* a, int b) {
+-    if (!is_recording)
++    // port-launcher: remember whether this open pushed, so its close pops only then (see frame_recording_allowed).
++    // An empty path (only if something still unbalances it) records nothing rather than dereferencing garbage.
++    const bool push = is_recording && !current_path.empty();
++    open_child_pushed.push_back(push);
++    if (!push)
+         return;
+     label key = { a, b };
+     auto& m = current_path.back()->children[key];
+@@ -450,7 +467,12 @@ void FrameInterpolation_RecordOpenChild(const void* a, int b) {
+ }
+ 
+ void FrameInterpolation_RecordCloseChild(void) {
+-    if (!is_recording)
++    // port-launcher: pop exactly what the matching open pushed, whatever is_recording says now.
++    if (open_child_pushed.empty())
++        return;
++    const bool pushed = open_child_pushed.back();
++    open_child_pushed.pop_back();
++    if (!pushed || current_path.size() <= 1)
+         return;
+     // append(Op::CloseChild);
+     if (has_inv_actor_mtx && current_path.size() == inv_actor_mtx_path_index) {
+-- 
+2.43.0
+

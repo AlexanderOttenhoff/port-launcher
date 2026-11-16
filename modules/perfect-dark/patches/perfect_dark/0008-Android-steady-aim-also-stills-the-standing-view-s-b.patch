@@ -1,0 +1,53 @@
+From c6a775424edbee4e0d2eaac620cfe56f54435d2d Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Sun, 15 Nov 2026 15:46:58 +1100
+Subject: [PATCH 8/8] Android: steady aim also stills the standing view's
+ breathing sway
+
+---
+ src/game/bondhead.c | 12 ++++++++++++
+ src/game/bondmove.c |  5 +++++
+ 2 files changed, 17 insertions(+)
+
+diff --git a/src/game/bondhead.c b/src/game/bondhead.c
+index 75c2b4b15..e6183f498 100644
+--- a/src/game/bondhead.c
++++ b/src/game/bondhead.c
+@@ -247,6 +247,18 @@ void bheadUpdate(f32 arg0, f32 arg1)
+ 
+ 			upvel.x *= 1 + 5 * g_Vars.currentplayer->bondbreathing;
+ 			upvel.z *= 1 + 5 * g_Vars.currentplayer->bondbreathing;
++#ifdef __ANDROID__
++			{
++				// [port launcher] Steady aim also stills the standing view's idle "breathing" sway, which a zoomed
++				// scope magnifies (owner 2026-11-15: still swaying while sniping). The idle rolls above still run, so
++				// nothing else that uses their random numbers changes. Same as our GoldenEye patch.
++				extern int bmovePlmSteadyAim(void);
++				if (bmovePlmSteadyAim()) {
++					lookvel.x = 0.0f; lookvel.y = 0.0f; lookvel.z = 1.0f;
++					upvel.x = 0.0f; upvel.y = 1.0f; upvel.z = 0.0f;
++				}
++			}
++#endif
+ 		}
+ 	}
+ 
+diff --git a/src/game/bondmove.c b/src/game/bondmove.c
+index fdb2717c7..57ce94eaa 100644
+--- a/src/game/bondmove.c
++++ b/src/game/bondmove.c
+@@ -59,6 +59,11 @@ void bmovePlmSetSteadyAim(int on)
+ 	g_PlmSteadyAim = on;
+ }
+ 
++int bmovePlmSteadyAim(void)
++{
++	return g_PlmSteadyAim;
++}
++
+ static bool bmovePlmWeaponForward(s32 i, s8 contpad, u32 allowed, struct movedata *data)
+ {
+ 	s32 *hold = &g_PlmWpnHold[g_Vars.currentplayernum];
+-- 
+2.43.0
+

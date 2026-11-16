@@ -1,0 +1,31 @@
+From 76af9735649bfecf0cbdaccbd91f20c34f5b5fa3 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Sat, 14 Nov 2026 20:02:07 +1100
+Subject: [PATCH] Android (port launcher): Select doesn't open the port's
+ Options when the launcher owns the menu (SNAP_NO_SELECT_MENU)
+
+---
+ src/input.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/input.cpp b/src/input.cpp
+index 6731238..bb787f3 100644
+--- a/src/input.cpp
++++ b/src/input.cpp
+@@ -3390,7 +3390,12 @@ static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
+         pad_follow_press(event);
+     }
+     if (event->type == SDL_CONTROLLERBUTTONDOWN) {
+-        if ((event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) && !g_pad_nso_n64) {
++        // Port launcher: in its direct mode the launcher's own menu owns Select/Back (MODULE_SPEC: a module doesn't open
++        // its own menus from game input); the launcher sets SNAP_NO_SELECT_MENU, and the button does nothing here.
++        static const bool plm_no_select_menu = std::getenv("SNAP_NO_SELECT_MENU") != nullptr;
++        if ((event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) && !g_pad_nso_n64 && plm_no_select_menu) {
++            // swallowed: our menu handles it
++        } else if ((event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) && !g_pad_nso_n64) {
+             // Select: the port's Options, from anywhere; Start while they
+             // are up, which closes them. On the Switch Online N64
+             // controller Back is C-right: the Options are on the pause menu.
+-- 
+2.43.0
+

@@ -1,0 +1,25 @@
+{
+  "spec": 0,
+  "id": "spaghettikart",
+  "name": "SpaghettiKart",
+  "version": "1.0.0+plm.4",
+  "family": "libultraship",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/HarbourMasters/SpaghettiKart", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "NONE",
+  "credits": "Harbour Masters and the Mario Kart 64 decompilation contributors",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.mario-kart-64.us",
+      "title": "Mario Kart 64", "game_code": "NKTE",
+      "region": "US", "revision": "",
+      "sha1": ["579c48e211ae952530ffc8738709f078d5dd215e"]
+    }
+  ],
+  "capabilities": { "mods": ["o2r"], "texture_packs": ["o2r"], "achievements": false }
+}

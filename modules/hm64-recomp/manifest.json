@@ -1,0 +1,48 @@
+{
+  "spec": 0,
+  "id": "hm64-recomp",
+  "name": "Harvest Moon 64: Recompiled",
+  "version": "1.2.x+plm.1",
+  "family": "n64recomp",
+  "native_launcher": true,
+  "upstream": {
+    "repo": "https://github.com/HarvestMoon64Recomp/HarvestMoon64Recomp",
+    "commit": "@UPSTREAM_COMMIT@"
+  },
+  "license": "GPL-3.0-only",
+  "host": {
+    "type": "sdl2",
+    "sdl": "2.32"
+  },
+  "abi": 0,
+  "platforms": [
+    "android-arm64"
+  ],
+  "graphics": {
+    "api": "vulkan",
+    "min_version": "1.2"
+  },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.harvest-moon-64.us",
+      "title": "Harvest Moon 64",
+      "game_code": "NYWE",
+      "region": "US",
+      "revision": "",
+      "sha1": [
+        "90631460f1876a14849df0541d534012b410a34c"
+      ]
+    }
+  ],
+  "capabilities": {
+    "mods": [
+      "nrm"
+    ],
+    "texture_packs": [
+      "rtz"
+    ],
+    "achievements": false
+  },
+  "maturity": "experimental"
+}

@@ -1,0 +1,49 @@
+From 9a3f2eb2cd0b8e18a76e2c6687dc25976d8c932f Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 14:30:42 +1100
+Subject: [PATCH] Add --game-mode for direct start of custom game modes
+
+---
+ src/main/main.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/main/main.cpp b/src/main/main.cpp
+index 6654589..c13ac14 100644
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -617,6 +617,7 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
+ 
+ static const char* cli_rom_path = nullptr;
+ static bool cli_skip_launcher = false;
++static const char* cli_game_mode = "";
+ 
+ int main(int argc, char** argv) {
+     (void)argc;
+@@ -642,11 +643,15 @@ int main(int argc, char** argv) {
+     // Arguments for launchers and handhelds, on every platform:
+     //   --rom <path>      select and validate a ROM without the launcher's file picker
+     //   --skip-launcher   start the game directly once a valid ROM is stored
++    //   --game-mode <id>  with --skip-launcher: start a custom game mode (the id of an enabled mod that
++    //                     declares "custom_gamemode") instead of the base game
+     for (int i = 1; i < argc; i++) {
+         if (strcmp(argv[i], "--rom") == 0 && i + 1 < argc) {
+             cli_rom_path = argv[++i];
+         } else if (strcmp(argv[i], "--skip-launcher") == 0) {
+             cli_skip_launcher = true;
++        } else if (strcmp(argv[i], "--game-mode") == 0 && i + 1 < argc) {
++            cli_game_mode = argv[++i];
+         }
+     }
+ 
+@@ -825,7 +830,7 @@ int main(int argc, char** argv) {
+     if (cli_skip_launcher && recomp::is_rom_valid(supported_games[0].game_id)) {
+         // Needs the runtime to set a dummy VI mode before the game's first frame ("Always call set_dummy_vi at
+         // least once"), as when the launcher starts the game.
+-        recomp::start_game(supported_games[0].game_id, {}); // default game mode, as the launcher does
++        recomp::start_game(supported_games[0].game_id, cli_game_mode); // empty: the base game, as the launcher does
+         recompui::hide_all_contexts();
+     }
+ 
+-- 
+2.43.0
+

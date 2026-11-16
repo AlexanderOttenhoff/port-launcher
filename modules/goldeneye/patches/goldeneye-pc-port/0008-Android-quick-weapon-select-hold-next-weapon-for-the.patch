@@ -1,0 +1,314 @@
+From 43932aaef7f85486d1bf355da864e0eeb6d3dc91 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Sun, 15 Nov 2026 17:54:12 +1100
+Subject: [PATCH] Android: quick weapon select (hold next weapon for the
+ inventory list, release to equip; the game pauses while it's open)
+
+---
+ port/src/input.c          |  51 +++++++++++
+ src/game/bondview2.c      |   7 ++
+ src/game/lv.c             |  11 +++
+ src/game/plm_weaponlist.c | 182 ++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 251 insertions(+)
+ create mode 100644 src/game/plm_weaponlist.c
+
+diff --git a/port/src/input.c b/port/src/input.c
+index 3d237940..b3d3e1f4 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -3109,6 +3109,57 @@ static unsigned inputComputePadSlot(int idx, signed char *stick_x, signed char *
+             const PadBinds *pb = &padTabGet()->seat[padSeatForSlot(idx)];
+             padMapPure(pb, padReadRaw(pad), padActPrev[idx], button, &pc, &po);
+             button = po.button;
++#ifdef __ANDROID__
++            /* [port launcher] Quick weapon select (src/game/plm_weaponlist.c; owner 2026-11-15). Player one, on foot
++             * in single player, modern scheme only. Next weapon no longer cycles on press: a tap (released within
++             * 250 ms) sends the same A press on release, so tapping cycles as before; holding opens the list, the
++             * stick or D-pad moves the highlight (and doesn't reach the game meanwhile), releasing equips. */
++            if (idx == 0 && pc.facePlayable && !pc.orig && getPlayerCount() == 1) {
++                extern s32 plmWeaponListIsOpen(void);
++                extern void plmWeaponListOpen(void), plmWeaponListMove(s32 dir), plmWeaponListCommit(void);
++                extern u32 g_plmWlDown;
++#define s_wlDown g_plmWlDown
++                static u32 s_wlRepeat;      /* next tick a held stick/D-pad may move the highlight again */
++                static int s_wlStickPrev;   /* -1 / 0 / +1: last navigation direction */
++                const u32 now = SDL_GetTicks();
++                const int held = (po.actHeld & (1u << PA_NEXTWPN)) != 0;
++                if (held) {
++                    button &= ~GE_CONT_A;   /* no cycle on press; decided on release or by the hold */
++                    if (!s_wlDown) s_wlDown = now ? now : 1;
++                    if (!plmWeaponListIsOpen() && now - s_wlDown >= 250) {
++                        plmWeaponListOpen();
++                        s_wlStickPrev = 0;
++                    }
++                    if (plmWeaponListIsOpen()) {
++                        int dir = 0;
++                        /* D-pad, or the left stick: in the modern (SOLITARE) role it arrives as C-buttons, up =
++                         * C-up (E), down = C-down (D) (see the stick block above); sy covers the other roles. */
++                        if ((button & (GE_CONT_UP | GE_CONT_E)) || sy > 40) dir = -1;
++                        if ((button & (GE_CONT_DOWN | GE_CONT_D)) || sy < -40) dir = 1;
++                        if (dir && (dir != s_wlStickPrev || now >= s_wlRepeat)) {
++                            plmWeaponListMove(dir);
++                            s_wlRepeat = now + (dir != s_wlStickPrev ? 350 : 120);
++                        }
++                        s_wlStickPrev = dir;
++                        sx = sy = 0;   /* the list owns the stick and D-pad while open */
++                        button &= ~(GE_CONT_UP | GE_CONT_DOWN | GE_CONT_LEFT | GE_CONT_RIGHT |
++                                    GE_CONT_C | GE_CONT_D | GE_CONT_E | GE_CONT_F);
++                    }
++                } else if (s_wlDown) {
++                    if (plmWeaponListIsOpen()) plmWeaponListCommit();
++                    else button |= GE_CONT_A;   /* a tap: cycle as before */
++                    s_wlDown = 0;
++                }
++#undef s_wlDown
++            } else if (idx == 0) {
++                extern u32 g_plmWlDown;
++                g_plmWlDown = 0;
++                /* Left gameplay (menu, pause, cutscene, tank) mid-hold: forget the hold and close the list, so the
++                 * next press starts fresh instead of opening at once. */
++                extern void plmWeaponListClose(void);
++                plmWeaponListClose();
++            }
++#endif
+             if (po.crouch) crouchNow = 1;
+             if (po.gadgetEdge) inputCycleGadget();
+             padActPrev[idx] = po.actHeld;
+diff --git a/src/game/bondview2.c b/src/game/bondview2.c
+index c0a4e2f4..79ee49b3 100644
+--- a/src/game/bondview2.c
++++ b/src/game/bondview2.c
+@@ -9532,6 +9532,13 @@ Gfx *maybe_mp_interface(Gfx *gdl)
+     PORT_HUD_ASPECT(gdl, GE_HUD_ASPECT_CENTER);
+ #endif
+     gdl = countdownTimerRender(gdl);
++#ifdef __ANDROID__
++    {
++        /* [port launcher] quick weapon select (plm_weaponlist.c), in the same centred HUD space as the timer */
++        extern Gfx *plmWeaponListRender(Gfx *gdl);
++        gdl = plmWeaponListRender(gdl);
++    }
++#endif
+ #ifdef PORT
+     PORT_HUD_ASPECT(gdl, GE_HUD_ASPECT_NONE);
+ #endif
+diff --git a/src/game/lv.c b/src/game/lv.c
+index 31a62db0..75017dc1 100644
+--- a/src/game/lv.c
++++ b/src/game/lv.c
+@@ -1065,6 +1065,9 @@ void lvlSetMultipliersForDifficulty(void)
+  * Address: 0x7F0BF7AC (NTSC-J).
+  * Address: 0x7F0BDFAC (PAL).
+  */
++#ifdef __ANDROID__
++s32 plmWeaponListIsOpen(void); /* plm_weaponlist.c */
++#endif
+ void lvlManageMpGame(void)
+ {
+     tlbmanageResetCurrentEntriesCount();
+@@ -1077,6 +1080,14 @@ void lvlManageMpGame(void)
+     {
+         g_ClockTimer = 0;
+     }
++#ifdef __ANDROID__
++    /* [port launcher] the quick weapon select list (plm_weaponlist.c) holds the world still while it's open, the same
++     * way the multiplayer pause does: a zero clock this frame */
++    else if (plmWeaponListIsOpen())
++    {
++        g_ClockTimer = 0;
++    }
++#endif
+     else
+     {
+         g_ClockTimer = speedgraphframes;
+diff --git a/src/game/plm_weaponlist.c b/src/game/plm_weaponlist.c
+new file mode 100644
+index 00000000..2cb8cb15
+--- /dev/null
++++ b/src/game/plm_weaponlist.c
+@@ -0,0 +1,182 @@
++/*
++ * [port launcher, Android] Quick weapon select: hold next-weapon to open a list of everything in the watch menu's
++ * inventory (weapons, gadgets, mission items) plus the dual-wield pairs, move with the stick or D-pad, release to equip (owner 2026-11-15). A tap still cycles as before; the hold and
++ * the input live in port/src/input.c, this file is the list itself. The world holds still while the list is open (lv.c zeroes the frame
++ * clock, as the multiplayer pause does). Single player only; equipping goes through the normal weapon-change
++ * request, so the usual holster/draw animation plays. To move into a bundled mod once the launcher's mod system
++ * exists (docs in the launcher repo: MODS.md).
++ */
++#ifdef __ANDROID__
++#include <ultra64.h>
++#include <string.h>
++#include <bondconstants.h>
++#include <bondtypes.h>
++#include <bondgame.h>
++#include "bondinv.h"
++#include "gun.h"
++#include "player.h"
++#include "fr.h"
++
++u16 *get_ptr_short_watch_text_for_item(ITEM_IDS item); /* gunfire.c */
++
++s32 bondinvGetTextbyInvIndex(s32 index);   /* bondinv.c: the item id of a watch-inventory entry */
++void bondinvSetCurEquippedItem(int current_item);
++void gunRequestHandWeaponChange(enum GUNHAND hand, s32 nextWeapon, s32 cycleDirection); /* gun.c */
++
++#define PLM_WL_MAX 40
++
++u32 g_plmWlDown; /* input.c: SDL tick when next weapon went down, 0 = up (shared so leaving gameplay can reset it) */
++static s32 s_open;
++static s32 s_count;
++static s32 s_sel;
++static s32 s_right[PLM_WL_MAX];
++static s32 s_left[PLM_WL_MAX];
++static s32 s_invIndex[PLM_WL_MAX]; /* watch-inventory index, or -1 for a dual-wield pair taken from the cycle */
++
++s32 plmWeaponListIsOpen(void)
++{
++    return s_open;
++}
++
++static void add(s32 right, s32 left, s32 invIndex)
++{
++    if (s_count < PLM_WL_MAX) {
++        s_right[s_count] = right;
++        s_left[s_count] = left;
++        s_invIndex[s_count] = invIndex;
++        s_count++;
++    }
++}
++
++/*
++ * Everything the watch (pause) menu's inventory lists, in its order: weapons, gadgets (camera, keys, modem...) and
++ * mission items (owner 2026-11-15). The watch list has no dual-wield entries, so the pairs the weapon cycle offers
++ * (bondinvCycleForward from the current pair until it wraps) go in right after their single weapon.
++ */
++void plmWeaponListOpen(void)
++{
++    s32 n, i, k, r, l, startr, startl, pairs, pairR[PLM_WL_MAX], pairL[PLM_WL_MAX];
++    s32 curR, curL, firstR = -1, firstL = -1;
++
++    if (g_CurrentPlayer == NULL) {
++        return;
++    }
++    curR = startr = r = g_CurrentPlayer->hands[GUNRIGHT].weaponnum;
++    curL = startl = l = g_CurrentPlayer->hands[GUNLEFT].weaponnum;
++    pairs = 0;
++    for (k = 0; k < PLM_WL_MAX; k++) {
++        if (curL > ITEM_UNARMED && pairs == 0 && k == 0) {
++            pairR[pairs] = curR; pairL[pairs] = curL; pairs++; /* the pair in hand now */
++        }
++        bondinvCycleForward(&r, &l, FALSE);
++        if ((r == startr && l == startl) || (k > 0 && r == firstR && l == firstL)) {
++            break; /* back round (the second test covers holding a gadget the cycle never returns to) */
++        }
++        if (k == 0) {
++            firstR = r;
++            firstL = l;
++        }
++        if (l > ITEM_UNARMED && pairs < PLM_WL_MAX) {
++            pairR[pairs] = r; pairL[pairs] = l; pairs++;
++        }
++    }
++    s_count = 0;
++    s_sel = 0;
++    n = bondinvCountTotalItemsInInv();
++    for (i = 0; i < n && s_count < PLM_WL_MAX; i++) {
++        s32 item = bondinvGetTextbyInvIndex(i);
++        if (item <= ITEM_UNARMED) {
++            continue;
++        }
++        add(item, ITEM_UNARMED, i);
++        if (item == curR && curL <= ITEM_UNARMED) {
++            s_sel = s_count - 1;
++        }
++        for (k = 0; k < pairs; k++) {
++            if (pairR[k] == item) {
++                add(pairR[k], pairL[k], -1);
++                if (pairR[k] == curR && pairL[k] == curL) {
++                    s_sel = s_count - 1;
++                }
++            }
++        }
++    }
++    s_open = s_count > 1; /* nothing to choose from: behave like no list */
++}
++
++void plmWeaponListMove(s32 dir)
++{
++    if (!s_open || s_count <= 0) {
++        return;
++    }
++    s_sel = (s_sel + dir + s_count) % s_count;
++}
++
++void plmWeaponListClose(void)
++{
++    s_open = 0;
++}
++
++/*
++ * Release: equip the highlighted entry. Weapons (below ITEM_BOMBCASE) and dual pairs go through the normal weapon
++ * change request, so the holster/draw animation plays; gadgets and mission items, which the weapon cycle never
++ * reaches, take the watch menu's own equip path (options.c sub_GAME_7F0A8378).
++ */
++void plmWeaponListCommit(void)
++{
++    s32 r, l;
++
++    if (s_open && g_CurrentPlayer != NULL) {
++        r = s_right[s_sel];
++        l = s_left[s_sel];
++        if (r != g_CurrentPlayer->hands[GUNRIGHT].weaponnum || l != g_CurrentPlayer->hands[GUNLEFT].weaponnum) {
++            if (r < ITEM_BOMBCASE) {
++                gunRequestHandWeaponChange(GUNRIGHT, r, 1);
++                gunRequestHandWeaponChange(GUNLEFT, l, 1);
++            } else if (s_invIndex[s_sel] >= 0) {
++                currentPlayerUnEquipWeaponWrapper(GUNRIGHT, r);
++                currentPlayerUnEquipWeaponWrapper(GUNLEFT, ITEM_UNARMED);
++                bondinvSetCurEquippedItem(s_invIndex[s_sel]);
++            }
++        }
++    }
++    s_open = 0;
++}
++
++/* Drawn in the HUD pass, after the timer (bondview2.c). A short vertical list centred on the screen, the highlighted
++ * entry outlined; at most 7 rows around the selection so long inventories stay readable. */
++Gfx *plmWeaponListRender(Gfx *gdl)
++{
++    char buf[48];
++    s32 i, first, rows, row, x, y, lineh;
++
++    if (!s_open) {
++        return gdl;
++    }
++    rows = s_count < 7 ? s_count : 7;
++    first = s_sel - rows / 2;
++    if (first < 0) first = 0;
++    if (first > s_count - rows) first = s_count - rows;
++    lineh = 14;
++    x = viGetViewLeft() + viGetViewWidth() / 2;
++    y = viGetViewTop() + viGetViewHeight() / 2 - (rows * lineh) / 2;
++    for (row = 0; row < rows; row++) {
++        i = first + row;
++        {
++            const char *name = (const char *)get_ptr_short_watch_text_for_item(s_right[i]);
++            size_t n = name ? strlen(name) : 0;
++            if (n >= sizeof(buf) - 4) n = sizeof(buf) - 4;
++            memcpy(buf, name ? name : "", n);
++            while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == ' ')) n--; /* language strings end with a newline */
++            if (s_left[i] == s_right[i] && s_left[i] > ITEM_UNARMED) {
++                memcpy(buf + n, " x2", 3); /* dual-wield pair */
++                n += 3;
++            }
++            buf[n] = '\n';
++            buf[n + 1] = '\0';
++        }
++        gdl = gunDrawHudString(gdl, (s8 *)buf, x, HUDHALIGN_MIDDLE, y + row * lineh, HUDVALIGN_TOP, i == s_sel);
++    }
++    return gdl;
++}
++#endif
+-- 
+2.43.0
+

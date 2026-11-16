@@ -1,0 +1,48 @@
+{
+  "spec": 0,
+  "id": "blastcorps-recomp",
+  "name": "Blast Corps Recompiled",
+  "version": "1.1.x+plm.1",
+  "family": "n64recomp",
+  "maturity": "experimental",
+  "native_launcher": true,
+  "upstream": {
+    "repo": "https://github.com/SlaveOfIDO/blastcorps-recomp",
+    "commit": "@UPSTREAM_COMMIT@"
+  },
+  "license": "GPL-3.0-only",
+  "host": {
+    "type": "sdl2",
+    "sdl": "2.32"
+  },
+  "abi": 0,
+  "platforms": [
+    "android-arm64"
+  ],
+  "graphics": {
+    "api": "vulkan",
+    "min_version": "1.2"
+  },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.blast-corps.us-1.1",
+      "title": "Blast Corps",
+      "game_code": "NBCE",
+      "region": "US",
+      "revision": "1.1",
+      "sha1": [
+        "483f7161aea39de8b45c9fbc70a2c3883c4dea8c"
+      ]
+    }
+  ],
+  "capabilities": {
+    "mods": [
+      "nrm"
+    ],
+    "texture_packs": [
+      "rtz"
+    ],
+    "achievements": false
+  }
+}

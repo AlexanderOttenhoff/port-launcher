@@ -1,0 +1,30 @@
+From 9376aefdefca742ad5bd6da2880ef620ae617e88 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Sun, 15 Nov 2026 15:04:11 +1100
+Subject: [PATCH] Android: screen taps don't fire in a level (no mouse buttons
+ for in-stage actions)
+
+---
+ port/src/input.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/port/src/input.c b/port/src/input.c
+index 00aa31a9..09a6ca8a 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -2283,6 +2283,12 @@ static int actHeld(const Uint8 *ks, int act)
+     Uint32 mb = mouseEnabled && mouseGrabbed && inStage &&
+                 !optionsOverlayIsOpen()
+               ? SDL_GetMouseState(NULL, NULL) : 0;
++#ifdef __ANDROID__
++    /* Android (port launcher): SDL turns screen touches into left-button mouse events, so a tap fired the gun
++     * (owner 2026-11-15). In a level, actions come from the controller only; front-end menus don't use this
++     * path (they read clicks as UI pointer input), so tapping menu items still works. */
++    mb = 0;
++#endif
+     for (int k = 0; k < BIND_MAX_KEYS; k++) {
+         int code = g_bind[act][k];
+         if (code > SDL_NUM_SCANCODES && code <= INPUT_BIND_MOUSE(5)) {
+-- 
+2.43.0
+

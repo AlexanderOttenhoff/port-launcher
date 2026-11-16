@@ -1,0 +1,98 @@
+From 57f0a7b7fb5973f1ef705ec654df5275370b49f3 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 22:12:04 +1100
+Subject: [PATCH] Android: run save states with every decomp thread parked at
+ its idle wait (OS_RunWithThreadsParked)
+
+---
+ src/port/OS/OS.h           |  4 ++++
+ src/port/OS/OS_Mesg.cpp    | 40 ++++++++++++++++++++++++++++++++++++++
+ src/port/OS/OS_Threads.cpp |  6 ++++++
+ 3 files changed, 50 insertions(+)
+
+diff --git a/src/port/OS/OS.h b/src/port/OS/OS.h
+index a7bcf4ab..d1b5a4c4 100644
+--- a/src/port/OS/OS.h
++++ b/src/port/OS/OS.h
+@@ -50,6 +50,10 @@ typedef struct OS_BlockedWait {
+ } OS_BlockedWait;
+ int OS_MesgSnapshotBlockedWaits(OS_BlockedWait* out, int max);
+ 
++// port-launcher (save states): see OS_Mesg.cpp. OS_LiveThreadCount: decomp threads started and not yet returned.
++int OS_RunWithThreadsParked(OSMesgQueue* const* idleQueues, int numIdle, int expected, int (*fn)(void*), void* arg);
++int OS_LiveThreadCount(void);
++
+ // Raise a registered hardware event (VI retrace, SI done, RDP done).
+ void OS_SendEventMesg(OSEvent event);
+ 
+diff --git a/src/port/OS/OS_Mesg.cpp b/src/port/OS/OS_Mesg.cpp
+index d9abcb10..12d79126 100644
+--- a/src/port/OS/OS_Mesg.cpp
++++ b/src/port/OS/OS_Mesg.cpp
+@@ -203,6 +203,46 @@ int OS_MesgSnapshotBlockedWaits(OS_BlockedWait* out, int max) {
+     return n;
+ }
+ 
++// port-launcher (save states): run fn while every decomp thread is parked at its idle wait. Why (RP6 2026-11-13,
++// "crashed on load state"): a state is a memcpy of the game's sections and heap, done on the tick thread between
++// ticks, but thread5, the audio manager, joy, viMgr and the motor thread are real OS threads here that keep running
++// game code against that same memory (the audio thread walks the synthesizer's voice lists, thread5 its task
++// lists). Copying under them tears what they read, and after a load each one carries on from wherever it happened
++// to be (e.g. waiting for an audio reply that the restored state never sent).
++//
++// Holding sMesgMutex freezes every queue operation, and a thread blocked in a queue wait can't return from it
++// without the mutex. So when, under the mutex, `expected` threads sit in blocked receives on the idle queues the
++// caller lists (each thread's top-of-loop wait, where its queue is empty and it holds no half-done work), nothing of
++// the game runs but the caller. fn may decline (return 0), e.g. when thread5 still has a task out; then the caller
++// retries after letting the threads run. After fn the queue contents may have changed under the waiters (a load), so
++// every waiter re-checks its queue. Returns 1 when fn ran and accepted, 0 to retry later.
++int OS_RunWithThreadsParked(OSMesgQueue* const* idleQueues, int numIdle, int expected, int (*fn)(void*), void* arg) {
++    std::lock_guard<std::mutex> lock(sMesgMutex);
++    int parked = 0;
++    for (int i = 0; i < kMaxBlockedWaits; i++) {
++        OSMesgQueue* mq = sBlockedWaits[i].mq.load(std::memory_order_acquire);
++        if (sBlockedWaits[i].tid.load(std::memory_order_acquire) == 0 || mq == nullptr ||
++            sBlockedWaits[i].isSend.load(std::memory_order_acquire)) {
++            continue;
++        }
++        for (int q = 0; q < numIdle; q++) {
++            if (idleQueues[q] == mq && mq->validCount == 0) {
++                parked++;
++                break;
++            }
++        }
++    }
++    if (parked < expected || fn(arg) == 0) {
++        return 0;
++    }
++    for (auto& [mq, sync] : sQueueSync) {
++        (void)mq;
++        sync.notEmpty.notify_all();
++        sync.notFull.notify_all();
++    }
++    return 1;
++}
++
+ // Raise a hardware event. Nothing interrupts on PC, so whoever stands in for a
+ // piece of hardware calls this when the real one would have fired.
+ void OS_SendEventMesg(OSEvent event) {
+diff --git a/src/port/OS/OS_Threads.cpp b/src/port/OS/OS_Threads.cpp
+index 25051494..b8cca081 100644
+--- a/src/port/OS/OS_Threads.cpp
++++ b/src/port/OS/OS_Threads.cpp
+@@ -76,6 +76,12 @@ extern "C" void OS_JoinDecompThreads(void) {
+     }
+ }
+ 
++// port-launcher (save states): how many decomp threads must be parked before game memory can be copied.
++extern "C" int OS_LiveThreadCount(void) {
++    std::lock_guard<std::mutex> lock(sExitMutex);
++    return sLiveThreads;
++}
++
+ extern "C" void OS_EnableThreadEntry(void* entry) {
+     std::lock_guard<std::mutex> lock(sTableMutex);
+     sEnabledEntries.insert(entry);
+-- 
+2.43.0
+

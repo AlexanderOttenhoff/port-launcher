@@ -1,0 +1,32 @@
+From 71769e40735bfc9384fc559ee43ea25317303143 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Sun, 15 Nov 2026 15:46:24 +1100
+Subject: [PATCH 7/8] Android: screen taps don't fire (bound actions ignore
+ mouse buttons)
+
+---
+ port/src/input.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/port/src/input.c b/port/src/input.c
+index d9921d9a2..953f876d4 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -793,6 +793,14 @@ static inline s32 inputBindPressed(const s32 idx, const u32 ck)
+ {
+ 	for (s32 i = 0; i < INPUT_MAX_BINDS; ++i) {
+ 		if (binds[idx][ck][i]) {
++#ifdef __ANDROID__
++			// [port launcher] SDL turns screen touches into left-button mouse events, so a tap fired the gun
++			// (owner 2026-11-15, as in GoldenEye). Bound actions ignore the mouse buttons and wheel; menus read
++			// clicks directly (menu.c inputs.mouseheld), so tapping menu items still works.
++			if (binds[idx][ck][i] >= VK_MOUSE_BEGIN && binds[idx][ck][i] <= VK_MOUSE_WHEEL_DN) {
++				continue;
++			}
++#endif
+ 			if (inputKeyPressed(binds[idx][ck][i])) {
+ 				return 1;
+ 			}
+-- 
+2.43.0
+

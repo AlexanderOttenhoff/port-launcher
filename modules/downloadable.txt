@@ -1,0 +1,28 @@
+# Modules delivered by the module server instead of the APK (one id per line).
+# tools/package_modules.py packages these; android/app/build.gradle.kts leaves them out of the APK.
+# Official (decomp) tier only: no game code or assets in the build (ROM metadata such as offset tables is fine).
+# A trailing "# pulled" keeps a module built and packaged but out of catalog.json (the app doesn't list it).
+# Order: decomps go on top down by progress (GAME_STATUS.md), one by one; this order is the order the app lists them in.
+# ghostship: Super Mario 64. MIT; extracts sm64.o2r from the player's ROM on the device.
+ghostship
+# shipwright: upstream has no licence file (see DECOMP_ROLLOUT.md).
+shipwright
+# lighthouse: Banjo-Kazooie. CC0; extracts bk.o2r from the player's ROM on the device.
+lighthouse
+perfect-dark
+goldeneye
+# goldenballoon: Diddy Kong Racing. MIT; it reads the ROM at runtime, so the build holds no ROM-derived code.
+goldenballoon
+2ship2harkinian
+# paperboat: pulled from the catalog on 2026-11-15 (wrong textures on the RP6; more testing; outside the first
+# release's scope). Still built.
+paperboat  # pulled
+# battleship: Super Smash Bros. MIT. Its relocation tables (ROM offsets/sizes) are metadata, like every port's
+# asset tables (owner, 2026-11-15).
+battleship
+# starship: Star Fox 64. CC0. In the alpha set (2026-11-15).
+starship
+# spaghettikart: upstream has no licence file; the modules repository is private for now (see DECOMP_ROLLOUT.md).
+# Pulled from the catalog on 2026-11-15 (RP6: wonky race-start camera, audio stutter; not essential), so the app
+# doesn't list it; still built so it can come back by re-adding it to catalog.json in the modules repository.
+spaghettikart  # pulled

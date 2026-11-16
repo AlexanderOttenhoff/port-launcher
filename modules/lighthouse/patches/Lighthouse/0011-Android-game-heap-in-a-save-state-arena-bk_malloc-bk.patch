@@ -1,0 +1,53 @@
+From 9f7c9e2e1001d0b6529df42572e84790feb03d29 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 11:01:09 +1100
+Subject: [PATCH] Android: game heap in a save-state arena
+ (bk_malloc/bk_free/bk_realloc via plm_arena)
+
+---
+ src/core1/memory.c | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/src/core1/memory.c b/src/core1/memory.c
+index e2b1a018..3e3817a3 100644
+--- a/src/core1/memory.c
++++ b/src/core1/memory.c
+@@ -361,8 +361,15 @@ void func_80254C98(void){
+     D_802765B0.unk0 = true;
+ }
+ 
++// port-launcher: the game heap lives in a static arena (modules/common/savestate/plm_arena.c) so save states,
++// which copy the game's own sections, capture every allocated object. Lighthouse's calloc/free/realloc put the
++// heap outside them and loading a state crashed on stale pointers.
++void* plm_arena_calloc(size_t n);
++void plm_arena_free(void* p);
++void* plm_arena_realloc(void* p, size_t n);
++
+ void *bk_malloc(size_t size){
+-    return calloc(1, size);
++    return plm_arena_calloc(size);
+ #if 0
+     u32 capacity;
+     EmptyHeapBlock *v1;
+@@ -496,7 +503,8 @@ void _heap_sortEmptyBlock(EmptyHeapBlock * arg0){
+ 
+ void bk_free(void * ptr){
+     // Lighthouse [port] Use standard free function
+-    return free(ptr);
++    plm_arena_free(ptr);
++    return;
+ #if 0
+     HeapHeader *sPtr; //stack_ptr
+     
+@@ -579,7 +587,7 @@ void *func_8025534C(void){
+ 
+ void *bk_realloc(void *ptr, size_t new_size){
+     // Lighthouse [port] Use standard realloc function
+-    return realloc(ptr, new_size);
++    return plm_arena_realloc(ptr, new_size);
+ #if 0
+ 
+     
+-- 
+2.43.0
+

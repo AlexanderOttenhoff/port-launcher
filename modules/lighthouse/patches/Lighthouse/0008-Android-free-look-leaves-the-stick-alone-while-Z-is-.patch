@@ -1,0 +1,37 @@
+From ead6f7b2cc472d97518a362480121aabdb43973a Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 14:52:06 +1100
+Subject: [PATCH] Android: free look leaves the stick alone while Z is held
+
+---
+ src/port/Enhancements/Camera/FreeLookCamera.cpp | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/port/Enhancements/Camera/FreeLookCamera.cpp b/src/port/Enhancements/Camera/FreeLookCamera.cpp
+index 4a10699b..26107c52 100644
+--- a/src/port/Enhancements/Camera/FreeLookCamera.cpp
++++ b/src/port/Enhancements/Camera/FreeLookCamera.cpp
+@@ -45,8 +45,20 @@ float SpringGain() {
+     return CVarGetFloat(CVAR_FREELOOK_SMOOTH_RATE, kDefaultSmooth) * kSmoothToGain;
+ }
+ 
++#ifdef __ANDROID__
++extern "C" unsigned int bakey_held(int button_indx);
++#endif
++
+ float ReadStick(float out[2]) {
+     ControlSchemes_GetRightStick(out);
++#ifdef __ANDROID__
++    // [port launcher] Holding Z (crouch: eggs, Wonderwing on the stick) leaves the stick to those moves; the camera
++    // holds its angle until Z is released.
++    if (bakey_held(1 /* BUTTON_Z */)) {
++        out[0] = out[1] = 0.0f;
++        return 0.0f;
++    }
++#endif
+     float mag = std::sqrt(out[0] * out[0] + out[1] * out[1]);
+     if (mag < kDeadzone) {
+         out[0] = out[1] = 0.0f;
+-- 
+2.43.0
+

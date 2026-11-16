@@ -1,0 +1,361 @@
+From 5d80bb8c7243462ea99e8515d4470a871b0d15e7 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <alexander.ottenhoff@gmail.com>
+Date: Sat, 14 Nov 2026 12:51:33 +1100
+Subject: [PATCH] Android build and direct start for port-launcher (shared
+ library, --rom, APP_FOLDER_PATH, nfd stub, host DXC, ANativeWindow,
+ SDL_MAIN_HANDLED)
+
+The crash handler needs no change: off Windows it is already a stub (no
+execinfo.h, which bionic only has from API 33).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ CMakeLists.txt                   |  41 ++++++++-
+ src/android/nfd_android_stub.cpp | 147 +++++++++++++++++++++++++++++++
+ src/main.cpp                     |  43 +++++++++
+ src/renderer.cpp                 |  15 ++++
+ 4 files changed, 243 insertions(+), 3 deletions(-)
+ create mode 100644 src/android/nfd_android_stub.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1ed76ba..c16668d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -101,11 +101,32 @@ if(PW64_WITH_RUNTIME)
+     # compile against the X11 definition, and a target that compiled against
+     # the wrong one would be an ABI mismatch at the call that passes the
+     # handle across rather than an error.
+-    if(UNIX AND NOT APPLE)
++    #
++    # Not on Android (port-launcher module): there plume's RenderWindow is the
++    # ANativeWindow* behind SDL's window (our plume/RT64 Android patches), and
++    # the renderers fetch it with SDL_GetWindowWMInfo (src/renderer.cpp,
++    # RecompFrontend's rt64_render_context.cpp). With the SDL-window definitions
++    # plume would try SDL_Vulkan_CreateSurface on an ANativeWindow*.
++    if(UNIX AND NOT APPLE AND NOT ANDROID)
+         set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
+         add_compile_definitions(PLUME_SDL_VULKAN_ENABLED RT64_SDL_WINDOW_VULKAN)
+     endif()
+ 
++    # Android (port-launcher module): RT64 links nfd, which has no Android
++    # backend; give it a stub that reports "cancel" (the ROM comes from the
++    # launcher, nothing here ever opens a file dialog). Same stub as the
++    # port-launcher's other recomp modules (from Zelda64Recomp-Android).
++    if(ANDROID AND NOT TARGET nfd)
++        add_library(nfd STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/android/nfd_android_stub.cpp")
++        target_include_directories(nfd PUBLIC
++            "${PW64_LIB_DIR}/RT64/src/contrib/nativefiledialog-extended/src/include")
++    endif()
++    # SDL's headers for every subproject on Android (the library links SDL2
++    # itself; the subprojects' own find_package doesn't reach every target).
++    if(ANDROID)
++        include_directories(${SDL2_INCLUDE_DIRS})
++    endif()
++
+     add_subdirectory("${PW64_LIB_DIR}/RT64" EXCLUDE_FROM_ALL)
+     add_subdirectory("${PW64_LIB_DIR}/N64ModernRuntime" EXCLUDE_FROM_ALL)
+ endif()
+@@ -164,7 +185,9 @@ if(PW64_WITH_FRONTEND)
+     # RT64 vendors all of them under contrib/dxc; this mirrors the selection
+     # RT64 makes for itself in lib/RT64/CMakeLists.txt.
+     set(PW64_RT64_DIR "${PW64_LIB_DIR}/RT64")
+-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
++    # DXC runs on the build machine, so it is chosen by the *host* CPU: an
++    # Android arm64 cross build on an x86-64 host needs the x64 dxc-linux.
++    if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+         set(PW64_DXC_ARCH arm64)
+     else()
+         set(PW64_DXC_ARCH x64)
+@@ -311,7 +334,14 @@ if(WIN32)
+         OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/AppIcon.ico")
+ endif()
+ 
+-add_executable(Pilotwings64Recomp ${PW64_SOURCES})
++# On Android the game is a shared library that the launcher's activity loads
++# (port-launcher module; its module.cmake adds the entry-point shim and renames
++# the output). Everywhere else it is the executable.
++if(ANDROID)
++    add_library(Pilotwings64Recomp SHARED ${PW64_SOURCES})
++else()
++    add_executable(Pilotwings64Recomp ${PW64_SOURCES})
++endif()
+ 
+ # On macOS the product is an application bundle, not a bare executable: it is
+ # what the player double-clicks, it is what carries the assets, and it is what
+@@ -357,6 +387,11 @@ if(NOT WIN32)
+     endif()
+ endif()
+ 
++if(ANDROID)
++    target_include_directories(Pilotwings64Recomp PRIVATE ${SDL2_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
++    target_link_libraries(Pilotwings64Recomp PRIVATE ${FREETYPE_LIBRARY} android log)
++endif()
++
+ if(PW64_WITH_RUNTIME)
+     target_link_libraries(Pilotwings64Recomp PRIVATE rt64 ultramodern librecomp)
+     if(WIN32)
+diff --git a/src/android/nfd_android_stub.cpp b/src/android/nfd_android_stub.cpp
+new file mode 100644
+index 0000000..cc946a4
+--- /dev/null
++++ b/src/android/nfd_android_stub.cpp
+@@ -0,0 +1,147 @@
++// Android has no native file dialog backend; file dialogs report cancel. Via JFG Android port.
++// From Zelda64Recomp-Android (linkzenic).
++#include "nfd.h"
++
++#include <cstdlib>
++
++namespace {
++constexpr const char* kUnavailable = "Native file dialogs are unavailable on Android.";
++}
++
++extern "C" {
++
++NFD_API void NFD_FreePathN(nfdnchar_t* filePath) {
++    std::free(filePath);
++}
++
++NFD_API void NFD_FreePathU8(nfdu8char_t* filePath) {
++    std::free(filePath);
++}
++
++NFD_API nfdresult_t NFD_Init(void) {
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_Quit(void) {
++}
++
++NFD_API nfdresult_t NFD_OpenDialogN(nfdnchar_t** outPath, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogU8(nfdu8char_t** outPath, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogMultipleN(const nfdpathset_t** outPaths, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*) {
++    if (outPaths != nullptr) {
++        *outPaths = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogMultipleU8(const nfdpathset_t** outPaths, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*) {
++    if (outPaths != nullptr) {
++        *outPaths = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_SaveDialogN(nfdnchar_t** outPath, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_SaveDialogU8(nfdu8char_t** outPath, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_PickFolderN(nfdnchar_t** outPath, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_PickFolderU8(nfdu8char_t** outPath, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API const char* NFD_GetError(void) {
++    return kUnavailable;
++}
++
++NFD_API void NFD_ClearError(void) {
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetCount(const nfdpathset_t*, nfdpathsetsize_t* count) {
++    if (count != nullptr) {
++        *count = 0;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetPathN(const nfdpathset_t*, nfdpathsetsize_t, nfdnchar_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_ERROR;
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetPathU8(const nfdpathset_t*, nfdpathsetsize_t, nfdu8char_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_ERROR;
++}
++
++NFD_API void NFD_PathSet_FreePathN(const nfdnchar_t* filePath) {
++    std::free(const_cast<nfdnchar_t*>(filePath));
++}
++
++NFD_API void NFD_PathSet_FreePathU8(const nfdu8char_t* filePath) {
++    std::free(const_cast<nfdu8char_t*>(filePath));
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetEnum(const nfdpathset_t*, nfdpathsetenum_t* outEnumerator) {
++    if (outEnumerator != nullptr) {
++        outEnumerator->ptr = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_PathSet_FreeEnum(nfdpathsetenum_t*) {
++}
++
++NFD_API nfdresult_t NFD_PathSet_EnumNextN(nfdpathsetenum_t*, nfdnchar_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API nfdresult_t NFD_PathSet_EnumNextU8(nfdpathsetenum_t*, nfdu8char_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_PathSet_Free(const nfdpathset_t*) {
++}
++
++}
+diff --git a/src/main.cpp b/src/main.cpp
+index b22e842..ae3a140 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -7,6 +7,13 @@
+ // --identify checks a dump against the pinned target before anything else is
+ // attempted.
+ 
++// Android (port-launcher module): SDL_main.h renames main() to SDL_main on
++// Android, but the module's shim calls the real main() (after
++// SDL_SetMainReady). Keep the name, as the RecompFrontend ports do.
++#if defined(__ANDROID__)
++#   define SDL_MAIN_HANDLED
++#endif
++
+ #include "pw64/callbacks.h"
+ #include "pw64/crash_handler.h"
+ #include "pw64/renderer.h"
+@@ -61,6 +68,15 @@ namespace pw64 {
+ // instead, for a copy carried on a stick -- the same convention RecompFrontend
+ // uses for its own paths.
+ std::filesystem::path settings_directory() {
++    // APP_FOLDER_PATH (the RecompFrontend ports' variable) wins outright. Why:
++    // the port-launcher Android module's shim sets it to the launcher's per-game
++    // config dir before calling main(); without this, Android (no XDG, HOME =
++    // the same dir) would nest everything one level deeper under
++    // .local/share/Pilotwings64Recomp, where the launcher's settings/mods
++    // plumbing (mods.json, <config>/mods link) would never find it.
++    if (const char* app = std::getenv("APP_FOLDER_PATH"); app != nullptr && *app != '\0') {
++        return std::filesystem::path{ app };
++    }
+     if (std::filesystem::exists("portable.txt")) {
+         return std::filesystem::current_path();
+     }
+@@ -430,7 +446,15 @@ int main(int argc, char** argv) {
+     {
+         std::error_code ec;
+         g_original_cwd = std::filesystem::current_path(ec);
++#if defined(__ANDROID__)
++        // Android (port-launcher module): the game is a shared library inside
++        // the launcher's process, so /proc/self/exe is app_process in
++        // /system/bin. The shim has already chdir'd to the module's data dir,
++        // which holds assets/ -- keep it.
++        const std::filesystem::path exe_dir;
++#else
+         const std::filesystem::path exe_dir = pw64::executable_directory(argv[0]);
++#endif
+         if (!exe_dir.empty()) {
+             std::filesystem::current_path(exe_dir, ec);
+             if (ec) {
+@@ -501,6 +525,25 @@ int main(int argc, char** argv) {
+ 
+     const std::string command = argv[1];
+ 
++    // Direct start from a launcher (port-launcher's shim passes
++    // `--rom <path> --skip-launcher [--game-mode <id>]`, the convention of the
++    // RecompFrontend ports): the dump goes straight to the game, exactly like
++    // the positional form below. --skip-launcher is implied by giving a dump
++    // (run() starts the game whenever it has one); --game-mode has no meaning
++    // here (no mod game modes), so both are accepted and ignored.
++    if (command == "--rom") {
++        if (argc < 3) {
++            std::fprintf(stderr, "error: --rom needs a path to a .z64 dump\n");
++            return 1;
++        }
++#if PW64_WITH_RUNTIME && PW64_WITH_RECOMPILED
++        return run(argc, argv, argv[2]);
++#else
++        std::fprintf(stderr, "This build cannot run the game.\n");
++        return 1;
++#endif
++    }
++
+     if (command == "--version" || command == "-v") {
+         print_version();
+         return 0;
+diff --git a/src/renderer.cpp b/src/renderer.cpp
+index a5ad96e..4c68acd 100644
+--- a/src/renderer.cpp
++++ b/src/renderer.cpp
+@@ -29,6 +29,11 @@
+ 
+ #include "hle/rt64_application.h"
+ 
++#if defined(__ANDROID__)
++#   include <SDL.h>
++#   include <SDL_syswm.h>
++#endif
++
+ namespace {
+ 
+ // Strip the MIPS segment bits from a virtual address to get an RDRAM offset.
+@@ -90,6 +95,16 @@ RT64Context::RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle win
+     core.window.view = window_handle.view;
+ #elif defined(_WIN32)
+     core.window = window_handle.window;
++#elif defined(__ANDROID__)
++    // Android (port-launcher module): ultramodern's handle is still the
++    // SDL_Window*, but plume presents to the ANativeWindow behind it (same as
++    // RecompFrontend's rt64_render_context.cpp on Android).
++    {
++        SDL_SysWMinfo wm_info;
++        SDL_VERSION(&wm_info.version);
++        SDL_GetWindowWMInfo(window_handle, &wm_info);
++        core.window = wm_info.info.android.window;
++    }
+ #else
+     core.window = window_handle;
+ #endif
+-- 
+2.43.0
+

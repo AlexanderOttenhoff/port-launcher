@@ -1,0 +1,7 @@
+[
+ {"id": "modern", "label": "Modern",
+  "detail": "Our pick on top of Starship's already modern defaults (60 fps, no LOD): the Macbeth ending camera and Sector Z fixes, the radio box expanded to the widescreen edge, and outlined fighters on the radar.",
+  "values": {
+   "gMaCameraFix": "1", "gSzActorFix": "1", "gRadioCommBox.Selection": "1", "gFighterOutlines": "1"
+  }}
+]

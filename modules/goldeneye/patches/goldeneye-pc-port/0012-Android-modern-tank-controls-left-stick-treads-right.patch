@@ -1,0 +1,219 @@
+From fc42cc995f656a0e50ceba116c66b293bb795521 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Mon, 16 Nov 2026 13:07:02 +1100
+Subject: [PATCH] Android: modern tank controls (left stick treads, right stick
+ turret, aiming only shows the crosshair); quick weapon select in the tank;
+ the tank stands still during instant pause
+
+---
+ port/src/input.c     | 30 +++++++++++++++++++++++++-
+ src/game/bondview2.c | 51 ++++++++++++++++++++++++++++++++++++++++++++
+ src/game/lv.c        |  6 ++++++
+ src/game/plm_mods.c  | 23 ++++++++++++++++++++
+ 4 files changed, 109 insertions(+), 1 deletion(-)
+
+diff --git a/port/src/input.c b/port/src/input.c
+index adfc89d3..789b1308 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -683,6 +683,7 @@ static const PadTable *padTabGet(void)
+ }
+ 
+ /* Current raw source state of a pad (digital buttons + triggers). */
++
+ static u32 padReadRaw(SDL_GameController *pad)
+ {
+     u32 raw = 0;
+@@ -1157,6 +1158,32 @@ static int padLookSmooth   = 0;               /* right-stick look low-pass stren
+ static int padTriggerPct   = 25;              /* trigger press point, % of travel (~30*256) */
+ /* padLookInvertY: declared with the D513 accessors above (D645). */
+ static int inputDefaultsRev = 0;              /* D546: 1 once the deadzone default migration ran */
++
++#ifdef __ANDROID__
++/* [port launcher] Modern tank controls (owner 2026-11-16; src/game/plm_mods.c): player one's two sticks, past their
++ * deadzones, -1..1 with x right = + and y up = + (the right stick's Y follows the invert-look setting). 0 when there's
++ * no pad or the Original (N64) scheme is on, which keeps the stock tank. */
++int plmTankSticks(float *lx, float *ly, float *rx, float *ry)
++{
++    SDL_GameController *pad = slotPad(0);
++    if (!pad || controlScheme) return 0;
++    int dzL = padDeadzoneL >= 0 ? padDeadzoneL : padDeadzone;
++    int dzR = padDeadzoneR >= 0 ? padDeadzoneR : padDeadzone;
++    float v[4];
++    const SDL_GameControllerAxis axes[4] = { SDL_CONTROLLER_AXIS_LEFTX, SDL_CONTROLLER_AXIS_LEFTY,
++                                             SDL_CONTROLLER_AXIS_RIGHTX, SDL_CONTROLLER_AXIS_RIGHTY };
++    for (int i = 0; i < 4; i++) {
++        int raw = SDL_GameControllerGetAxis(pad, axes[i]);
++        int dz = i < 2 ? dzL : dzR;
++        int mag = raw < 0 ? -raw : raw;
++        float f = mag <= dz ? 0.0f : (float)(mag - dz) / (float)(32767 - dz);
++        if (f > 1.0f) f = 1.0f;
++        v[i] = raw < 0 ? -f : f;
++    }
++    *lx = v[0]; *ly = -v[1]; *rx = v[2]; *ry = padLookInvertY ? v[3] : -v[3];
++    return 1;
++}
++#endif
+ /* Per-pad look-smoothing EMA state (Wave A item 5), one X/Y pair per pad. Reset
+  * on hot-unplug (inputRescanPads) so a smoothed value can't stick after the
+  * stick snaps back; the low-pass otherwise recentres it toward 0 on its own. */
+@@ -3115,7 +3142,8 @@ static unsigned inputComputePadSlot(int idx, signed char *stick_x, signed char *
+              * 250 ms) sends the same A press on release, so tapping cycles as before; holding opens the list, the
+              * stick or D-pad moves the highlight (and doesn't reach the game meanwhile), releasing equips. */
+             extern int g_plmModQuickWeaponSelect;   /* built-in mod switch (src/game/plm_mods.c) */
+-            if (idx == 0 && pc.facePlayable && !pc.orig && getPlayerCount() == 1 && g_plmModQuickWeaponSelect) {
++            /* In the tank too (owner 2026-11-16): its shells are an inventory item there, so "Tank" is in the list. */
++            if (idx == 0 && (pc.facePlayable || pc.tank) && !pc.orig && getPlayerCount() == 1 && g_plmModQuickWeaponSelect) {
+                 extern s32 plmWeaponListIsOpen(void);
+                 extern void plmWeaponListOpen(void), plmWeaponListMove(s32 dir), plmWeaponListCommit(void);
+                 extern u32 g_plmWlDown;
+diff --git a/src/game/bondview2.c b/src/game/bondview2.c
+index 79ee49b3..3fea89ab 100644
+--- a/src/game/bondview2.c
++++ b/src/game/bondview2.c
+@@ -180,6 +180,14 @@
+ 
+ #include "bondview_internal.h"
+ 
++/* [port launcher] modern tank controls and instant pause (see plm_mods.c, lv.c) */
++#ifdef __ANDROID__
++int plmTankModern(void);          /* plm_mods.c */
++float plmTankCurve(float v);
++extern float g_plmTankLX, g_plmTankLY, g_plmTankRX, g_plmTankRY;
++s32 plmWatchIsFrozen(void);       /* lv.c */
++#endif
++
+ #define a8s "%8s"
+ #define aX4_0f "x %4.0f"
+ #define aY4_0f "y %4.0f"
+@@ -5695,12 +5703,29 @@ void bondviewProcessInput(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
+                 g_TankTurretTurn += DegToRad1Fact(1) * targetSpeed * g_GlobalTimerDelta;
+             }
+ 
++#ifdef __ANDROID__
++            /* [port launcher] modern tank controls (plm_mods.c): the right stick's X turns the turret */
++            if (plmTankModern())
++            {
++                g_TankTurretTurn = DegToRad1Fact(1) * 1.5f * plmTankCurve(g_plmTankRX) * g_GlobalTimerDelta;
++            }
++
++            if (!g_CurrentPlayer->insightaimmode || plmTankModern())  /* modern: aiming doesn't stop the tank */
++#else
+             if (!g_CurrentPlayer->insightaimmode)
++#endif
+             {
+                 ftemp_nostack_spD8 = 0;
+                 targetSpeed = 1.0f;
+                 ftemp_nostack_spE8 = 1.0f;
+ 
++#ifdef __ANDROID__
++                if (plmTankModern())
++                {
++                    ftemp_nostack_spD8 = g_plmTankLY;  /* the left stick's Y drives, analog */
++                }
++                else
++#endif
+                 if (moveData.canLookAhead)
+                 {
+                     ftemp_nostack_spD8 = (f32) moveData.analogWalk / 70.0f;
+@@ -6042,6 +6067,14 @@ void bondviewProcessInput(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
+         }
+         else
+         {
++#ifdef __ANDROID__
++            if (plmTankModern())
++            {
++                /* [port launcher] modern tank controls: the right stick's Y pitches the view (and the turret) */
++                g_CurrentPlayer->speedverta = -plmTankCurve(g_plmTankRY);
++            }
++            else
++#endif
+             if (moveData.canNaturalPitch)
+             {
+                 ftemp_nostack_sp98 = viGetFovY() / 60.0f;
+@@ -6145,6 +6178,13 @@ void bondviewProcessInput(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
+         {
+             ftemp_nostack_sp80 = 0;
+ 
++#ifdef __ANDROID__
++            if (plmTankModern())
++            {
++                ftemp_nostack_sp80 = plmTankCurve(g_plmTankLX) * 0.3f;  /* the left stick's X turns the hull (treads) */
++            }
++            else
++#endif
+             if (moveData.canNaturalTurn)
+             {
+                 ftemp_nostack_sp80 = g_CurrentPlayer->speedtheta * 0.3f;
+@@ -6169,6 +6209,17 @@ void bondviewProcessInput(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
+         {
+             g_CurrentPlayer->speedtheta = 0;
+         }
++#ifdef __ANDROID__
++        /* [port launcher] instant pause (lv.c): Bond's update runs on real time while the watch comes up or goes
++         * away, so the tank would keep driving and turning; it stands still with the world instead. */
++        if (plmWatchIsFrozen())
++        {
++            g_CurrentPlayer->speedforwards = 0;
++            g_CurrentPlayer->speedtheta = 0;
++            g_TankTurnSpeed = 0;
++            g_TankTurretTurn = 0;
++        }
++#endif
+     }
+ 
+     if (moveData.detonating)
+diff --git a/src/game/lv.c b/src/game/lv.c
+index e6e3425c..75527f71 100644
+--- a/src/game/lv.c
++++ b/src/game/lv.c
+@@ -1123,6 +1123,12 @@ static s32 plmWatchTransitionFreeze(void)
+         || state == WATCH_ANIMATION_0xd;
+ }
+ 
++/* Whether the world is held for the watch this frame (bondview2.c stops the tank with it). */
++s32 plmWatchIsFrozen(void)
++{
++    return plmWatchFrozen;
++}
++
+ void plmWatchClockBegin(void)
+ {
+     if (plmWatchFrozen)
+diff --git a/src/game/plm_mods.c b/src/game/plm_mods.c
+index f8f5180b..fe9eb490 100644
+--- a/src/game/plm_mods.c
++++ b/src/game/plm_mods.c
+@@ -9,6 +9,29 @@ int g_plmModQuickWeaponSelect = 1;  /* hold next weapon for the inventory list (
+ int g_plmModInstantPause = 1;       /* the world stops while the watch comes up and goes away (0009) */
+ int g_plmModSplitDifficulty = 1;    /* complexity, then enemy difficulty, on the difficulty screen (0010) */
+ 
++/* Modern tank controls (owner 2026-11-16): left stick = treads (Y drives, X turns the hull), right stick = turret (X
++ * turns it, Y pitches the view); aiming only shows the crosshair and no longer stops the tank. Part of our input layer
++ * (like the controller layout), not a switchable mod: the Original (N64) scheme keeps the stock tank. bondview2.c
++ * asks plmTankModern each frame and takes its stick values from here (port/src/input.c plmTankSticks). */
++extern int plmTankSticks(float *lx, float *ly, float *rx, float *ry);
++extern int g_PlayerIsInTank;
++extern int g_EnterTankAudioState;
++float g_plmTankLX, g_plmTankLY, g_plmTankRX, g_plmTankRY;
++
++int plmTankModern(void)
++{
++    if (g_PlayerIsInTank != 1 || g_EnterTankAudioState != 2 /* TANK_RUN_STATE_RUNNING */) {
++        return 0;
++    }
++    return plmTankSticks(&g_plmTankLX, &g_plmTankLY, &g_plmTankRX, &g_plmTankRY);
++}
++
++/* Signed square: fine control near the centre, full speed at the edge (as the stock stick turn). */
++float plmTankCurve(float v)
++{
++    return v >= 0 ? v * v : -v * v;
++}
++
+ /* Registered before main() runs configLoad: the option tables are plain static arrays, so this is safe this early. */
+ __attribute__((constructor)) static void plmModsRegister(void)
+ {
+-- 
+2.43.0
+

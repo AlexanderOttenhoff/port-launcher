@@ -1,0 +1,45 @@
+From c719c5d06b7246bc66e80cba6c0153d926417305 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 08:56:42 +1100
+Subject: [PATCH] Android: shared library, no host Torch step
+
+---
+ CMakeLists.txt | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 12be7c57..19e90041 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -190,7 +190,7 @@ add_compile_definitions(
+ )
+ 
+ # Find necessary libraries
+-if (UNIX AND NOT APPLE)
++if (UNIX AND NOT APPLE AND NOT ANDROID)
+     find_package(OpenGL REQUIRED)
+ endif()
+ 
+@@ -265,6 +265,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+         MACOSX_BUNDLE_INFO_PLIST ${IOS_DIR}/plist.in
+         RESOURCE "${IMAGE_FILES};${STORYBOARD_FILE};${ICON_FILES}"
+     )
++elseif(ANDROID)
++    # The game is a shared library that SDL's Java activity loads.
++    add_library(${PROJECT_NAME} SHARED ${ALL_FILES})
+ else()
+     add_executable(${PROJECT_NAME} ${ALL_FILES})
+ endif()
+@@ -751,7 +754,8 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+   endif()
+ endif()
+ 
+-if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
++# Host-side Torch (packs lighthouse.o2r at build time); Android cross builds pack it with a host Torch separately.
++if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT ANDROID)
+ include(ExternalProject)
+ ExternalProject_Add(TorchExternal
+ 	PREFIX TorchExternal
+-- 
+2.43.0
+

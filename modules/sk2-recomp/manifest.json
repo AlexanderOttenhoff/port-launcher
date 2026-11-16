@@ -1,0 +1,48 @@
+{
+  "spec": 0,
+  "id": "sk2-recomp",
+  "name": "Snowboard Kids 2: Recompiled",
+  "version": "2.0.x+plm.1",
+  "family": "n64recomp",
+  "native_launcher": true,
+  "upstream": {
+    "repo": "https://github.com/cdlewis/snowboardkids2-recomp",
+    "commit": "@UPSTREAM_COMMIT@"
+  },
+  "license": "GPL-3.0-only",
+  "host": {
+    "type": "sdl2",
+    "sdl": "2.32"
+  },
+  "abi": 0,
+  "platforms": [
+    "android-arm64"
+  ],
+  "graphics": {
+    "api": "vulkan",
+    "min_version": "1.2"
+  },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.snowboard-kids-2.us",
+      "title": "Snowboard Kids 2",
+      "game_code": "NK2E",
+      "region": "US",
+      "revision": "",
+      "sha1": [
+        "5ce896fd64276948bc2b8cccd8cd51c25a9f32aa"
+      ]
+    }
+  ],
+  "capabilities": {
+    "mods": [
+      "nrm"
+    ],
+    "texture_packs": [
+      "rtz"
+    ],
+    "achievements": false
+  },
+  "maturity": "experimental"
+}

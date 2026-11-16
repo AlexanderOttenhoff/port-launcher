@@ -1,0 +1,44 @@
+From aad0236554e554ba991f41ac9a8fe9e80f9afbdc Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 15:24:21 +1100
+Subject: [PATCH] Android: pad defaults B = bomb, X = boost, Y = brake
+
+---
+ libultraship        | 2 +-
+ src/port/Engine.cpp | 9 +++++++++
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/libultraship b/libultraship
+index eaaf9d0f..c15bbf39 160000
+--- a/libultraship
++++ b/libultraship
+@@ -1 +1 @@
+-Subproject commit eaaf9d0fc91e2c400f49ef2a1f8547a691ce4d3c
++Subproject commit c15bbf39804780b501f1e3ad21d0b117be53c6e4
+diff --git a/src/port/Engine.cpp b/src/port/Engine.cpp
+index 84171ec9..39711182 100644
+--- a/src/port/Engine.cpp
++++ b/src/port/Engine.cpp
+@@ -146,10 +146,19 @@ GameEngine::GameEngine() {
+         // SDLButtonToButtonMappings
+         std::unordered_map<CONTROLLERBUTTONS_T, std::unordered_set<SDL_GameControllerButton>>{
+             { BTN_A, { SDL_CONTROLLER_BUTTON_A } },
++#ifdef __ANDROID__
++            // Port launcher: by label, B is B (bomb), X boosts (C-left) and Y brakes (C-down); the triggers keep
++            // boost/brake below.
++            { BTN_B, { SDL_CONTROLLER_BUTTON_B } },
++            { BTN_START, { SDL_CONTROLLER_BUTTON_START } },
++            { BTN_CLEFT, { SDL_CONTROLLER_BUTTON_X } },
++            { BTN_CDOWN, { SDL_CONTROLLER_BUTTON_Y } },
++#else
+             { BTN_B, { SDL_CONTROLLER_BUTTON_X } },
+             { BTN_START, { SDL_CONTROLLER_BUTTON_START } },
+             { BTN_CLEFT, { SDL_CONTROLLER_BUTTON_Y } },
+             { BTN_CDOWN, { SDL_CONTROLLER_BUTTON_B } },
++#endif
+             { BTN_DUP, { SDL_CONTROLLER_BUTTON_DPAD_UP } },
+             { BTN_DDOWN, { SDL_CONTROLLER_BUTTON_DPAD_DOWN } },
+             { BTN_DLEFT, { SDL_CONTROLLER_BUTTON_DPAD_LEFT } },
+-- 
+2.43.0
+

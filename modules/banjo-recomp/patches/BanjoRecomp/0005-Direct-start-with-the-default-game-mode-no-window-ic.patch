@@ -1,0 +1,43 @@
+From 712847519a6efac93bc606eaa407df01521bb7df Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 13:00:03 +1100
+Subject: [PATCH 5/5] Direct start with the default game mode; no window icon
+ on Android
+
+---
+ lib/RecompFrontend | 2 +-
+ src/main/main.cpp  | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/lib/RecompFrontend b/lib/RecompFrontend
+index b34fb68..3169099 160000
+--- a/lib/RecompFrontend
++++ b/lib/RecompFrontend
+@@ -1 +1 @@
+-Subproject commit b34fb681aff931d64902fb4f15e5c26c9c76acd8
++Subproject commit 31690995ede8e8655c58f19bef2e954d1695a25b
+diff --git a/src/main/main.cpp b/src/main/main.cpp
+index bcedd3f..6654589 100644
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -181,7 +181,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
+     bool choose_kazooie_icon = (rand() % 2 == 0);
+     HICON new_icon = LoadIcon(GetModuleHandle(NULL), choose_kazooie_icon ? MAKEINTRESOURCE(APP_ICON_K) : MAKEINTRESOURCE(APP_ICON_B));
+     SendMessage(wmInfo.info.win.window, WM_SETICON, ICON_SMALL2, (LPARAM)(new_icon));
+-#elif defined(__linux__)
++#elif defined(__gnu_linux__) // as SetImageAsIcon itself; Android defines __linux__ but has no window icons
+     SetImageAsIcon("icons/app.png", window);
+ #endif
+ 
+@@ -825,7 +825,7 @@ int main(int argc, char** argv) {
+     if (cli_skip_launcher && recomp::is_rom_valid(supported_games[0].game_id)) {
+         // Needs the runtime to set a dummy VI mode before the game's first frame ("Always call set_dummy_vi at
+         // least once"), as when the launcher starts the game.
+-        recomp::start_game(supported_games[0].game_id);
++        recomp::start_game(supported_games[0].game_id, {}); // default game mode, as the launcher does
+         recompui::hide_all_contexts();
+     }
+ 
+-- 
+2.43.0
+

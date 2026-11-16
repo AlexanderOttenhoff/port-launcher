@@ -1,0 +1,90 @@
+From b8ced142eabb4a190c4920972460807b7270c5c8 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 22:01:36 +1100
+Subject: [PATCH 5/5] Port launcher: render scale down to 0.5x on the GL
+ backend (handheld power saving)
+
+---
+ platform/fast3d/gfx_opengl.c       |  5 +++--
+ platform/fast3d/gfx_render_scale.h | 17 +++++++++++++----
+ platform/video_config.c            |  4 +++-
+ 3 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/platform/fast3d/gfx_opengl.c b/platform/fast3d/gfx_opengl.c
+index ff264ead..3e005228 100644
+--- a/platform/fast3d/gfx_opengl.c
++++ b/platform/fast3d/gfx_opengl.c
+@@ -2817,8 +2817,8 @@ static float gfx_opengl_effective_render_scale(void) {
+     if (g_pcRenderScale != g_pcRenderScale) {
+         return 1.0f;
+     }
+-    if (g_pcRenderScale < 1.0f) {
+-        return 1.0f;
++    if (g_pcRenderScale < 0.5f) {   /* port-launcher: 0.5, not 1.0 (GFX_RENDER_SCALE_MIN, gfx_render_scale.h) */
++        return 0.5f;
+     }
+     if (g_pcRenderScale > 4.0f) {
+         return 4.0f;
+@@ -2908,6 +2908,7 @@ static bool gfx_opengl_scene_target_enabled(void) {
+     float render_scale = gfx_opengl_effective_render_scale();
+     return g_pcRemasterFX ||
+            render_scale > 1.001f ||
++           render_scale < 0.999f ||   /* port-launcher: below 1x also needs the scene target (upscaled on resolve) */
+            gfx_opengl_effective_msaa_samples() > 0 ||
+            gfx_opengl_output_ssao_active() ||   /* force scene FBO so depth is sampleable */
+            gfx_diag_xlu_coverage_stencil_enabled() ||
+diff --git a/platform/fast3d/gfx_render_scale.h b/platform/fast3d/gfx_render_scale.h
+index b6990172..972bb5e0 100644
+--- a/platform/fast3d/gfx_render_scale.h
++++ b/platform/fast3d/gfx_render_scale.h
+@@ -28,7 +28,15 @@
+ extern "C" {
+ #endif
+ 
+-#define GFX_RENDER_SCALE_MIN 1.0f
++/*
++ * port-launcher: 0.5 instead of 1.0. Upstream treats RenderScale purely as supersampling (>= 1x of the window).
++ * On a handheld the useful direction is the other one: a 1080p panel at 75% or 50% saves GPU time and battery.
++ * The GL backend already renders into an offscreen scene target whenever the scale isn't 1x, and its resolve is a
++ * linear-filtered glBlitFramebuffer from scene size to drawable size, which upscales as happily as it downscales;
++ * the camera projection is keyed to OUTPUT dimensions (gfx_pc_dkr.c), so the lens doesn't change either. All
++ * that stopped a sub-1x scale were these clamps.
++ */
++#define GFX_RENDER_SCALE_MIN 0.5f
+ #define GFX_RENDER_SCALE_MAX 4.0f
+ 
+ /*
+@@ -103,11 +111,12 @@ static inline void gfx_render_scaled_dimensions(
+         if (area_scale < scale) {
+             scale = area_scale;
+         }
+-    } else {
++    } else if (scale > 1.0) {
++        /* port-launcher: over budget means "no supersampling", not "force 1x": keep a sub-1x choice. */
+         scale = 1.0;
+     }
+-    if (scale < 1.0) {
+-        scale = 1.0;
++    if (scale < (double)GFX_RENDER_SCALE_MIN) {
++        scale = (double)GFX_RENDER_SCALE_MIN;
+     }
+ 
+     if (render_width != NULL) {
+diff --git a/platform/video_config.c b/platform/video_config.c
+index 295261b5..b18b900a 100644
+--- a/platform/video_config.c
++++ b/platform/video_config.c
+@@ -48,7 +48,9 @@ static const MdkrVideoSchema s_schema[MDKR_VIDEO_KEY_COUNT] = {
+     },
+     [MDKR_VIDEO_RENDER_SCALE] = {
+         "Video.RenderScale", "MDKR_RENDER_SCALE",
+-        MDKR_VIDEO_TYPE_FLOAT, MDKR_VIDEO_SCOPE_LIVE, 1.0f, 4.0f,
++        /* port-launcher: the floor is 0.5 instead of 1.0, so a handheld can render below its panel resolution
++         * (our menu's 75% / Half render scale; see gfx_render_scale.h). */
++        MDKR_VIDEO_TYPE_FLOAT, MDKR_VIDEO_SCOPE_LIVE, 0.5f, 4.0f,
+         "Render scale",
+         "Internal supersampling factor. Fidelity only; never changes the look.",
+         MDKR_VIDEO_CAT_FIDELITY
+-- 
+2.43.0
+

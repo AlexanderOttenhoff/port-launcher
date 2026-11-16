@@ -1,0 +1,26 @@
+From b10dec6eb256d1cf8a4a2062418fec425bf10232 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 13:13:37 +1100
+Subject: [PATCH 2/2] Android: no glibc __assert declaration (bionic has its
+ own)
+
+---
+ soh/include/functions.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/soh/include/functions.h b/soh/include/functions.h
+index 22adf0362..b8947a734 100644
+--- a/soh/include/functions.h
++++ b/soh/include/functions.h
+@@ -61,6 +61,8 @@ u32 func_80001F8C(void);
+ u32 Locale_IsRegionNative(void);
+ #ifdef __WIIU__
+ void _assert(const char* exp, const char* file, s32 line);
++#elif defined(__ANDROID__)
++// Bionic declares its own __assert(file, line, msg) and has no __THROW; nothing in SoH calls this one.
+ #elif defined(__linux__)
+ void __assert(const char* exp, const char* file, s32 line) __THROW;
+ #elif !defined(__APPLE__) && !defined(__SWITCH__) && !defined(__OpenBSD__)
+-- 
+2.43.0
+

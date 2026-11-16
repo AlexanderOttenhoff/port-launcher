@@ -1,0 +1,129 @@
+From 7f3ccf743ca518f48172f3c161a50be96f2df4b2 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Mon, 16 Nov 2026 11:00:11 +1100
+Subject: [PATCH] Android: built-in mod switches (Plm.SteadyAim,
+ Plm.QuickWeaponSelect, Plm.InstantPause, Plm.SplitDifficulty; off = stock)
+
+---
+ port/src/input.c    |  3 ++-
+ src/game/bondhead.c |  3 ++-
+ src/game/front.c    | 10 +++++++---
+ src/game/lv.c       |  3 ++-
+ src/game/plm_mods.c | 20 ++++++++++++++++++++
+ 5 files changed, 33 insertions(+), 6 deletions(-)
+ create mode 100644 src/game/plm_mods.c
+
+diff --git a/port/src/input.c b/port/src/input.c
+index b3d3e1f4..adfc89d3 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -3114,7 +3114,8 @@ static unsigned inputComputePadSlot(int idx, signed char *stick_x, signed char *
+              * in single player, modern scheme only. Next weapon no longer cycles on press: a tap (released within
+              * 250 ms) sends the same A press on release, so tapping cycles as before; holding opens the list, the
+              * stick or D-pad moves the highlight (and doesn't reach the game meanwhile), releasing equips. */
+-            if (idx == 0 && pc.facePlayable && !pc.orig && getPlayerCount() == 1) {
++            extern int g_plmModQuickWeaponSelect;   /* built-in mod switch (src/game/plm_mods.c) */
++            if (idx == 0 && pc.facePlayable && !pc.orig && getPlayerCount() == 1 && g_plmModQuickWeaponSelect) {
+                 extern s32 plmWeaponListIsOpen(void);
+                 extern void plmWeaponListOpen(void), plmWeaponListMove(s32 dir), plmWeaponListCommit(void);
+                 extern u32 g_plmWlDown;
+diff --git a/src/game/bondhead.c b/src/game/bondhead.c
+index 0b98c674..6404ea09 100644
+--- a/src/game/bondhead.c
++++ b/src/game/bondhead.c
+@@ -408,7 +408,8 @@ void bheadUpdate(f32 percent_speed, f32 speedsideways)
+             /* Port launcher "Steady aim": no idle breathing sway while standing; the view stays level and centred.
+              * The idle rolls above still draw their random numbers, so nothing else that uses them changes. */
+             extern volatile int g_PlmSteadyView;
+-            if (g_PlmSteadyView) {
++            extern int g_plmModSteadyAim;  /* built-in mod switch (plm_mods.c) */
++            if (g_PlmSteadyView && g_plmModSteadyAim) {
+                 lookvel.f[0] = 0.0f; lookvel.f[1] = 0.0f; lookvel.f[2] = 1.0f;
+                 upvel.f[0] = 0.0f; upvel.f[1] = 1.0f; upvel.f[2] = 0.0f;
+             }
+diff --git a/src/game/front.c b/src/game/front.c
+index 23e51b8d..893df01b 100644
+--- a/src/game/front.c
++++ b/src/game/front.c
+@@ -3506,6 +3506,7 @@ Gfx *constructor_menu07_missionsel(Gfx *DL)
+  * skips step 1 (its options screen sets the enemies). A step of the same menu rather than a new menu id, so the
+  * menu tables sized by the menu count stay as they are. */
+ extern s32 g_plmEnemyDifficulty;
++extern int g_plmModSplitDifficulty;  /* built-in mod switch (plm_mods.c): off = the stock one-step screen */
+ static s32 plmEnemyStep = 0;
+ #endif
+ void init_menu08_difficultyselect(void)
+@@ -3585,7 +3586,7 @@ void interface_menu08_difficulty(void)
+                 tab_next_selected = TRUE;
+                 sndPlaySfx(g_musicSfxBufferPtr, PAPER_TURN_SFX, NULL);
+             }
+-            else if (mission_difficulty_highlighted >= DIFFICULTY_AGENT && mission_difficulty_highlighted <= DIFFICULTY_00)
++            else if (g_plmModSplitDifficulty && mission_difficulty_highlighted >= DIFFICULTY_AGENT && mission_difficulty_highlighted <= DIFFICULTY_00)
+             {
+                 selected_difficulty = mission_difficulty_highlighted;
+                 plmEnemyStep = 1;
+@@ -3599,7 +3600,7 @@ void interface_menu08_difficulty(void)
+             {
+                 selected_difficulty = mission_difficulty_highlighted;
+ #ifdef __ANDROID__
+-                g_plmEnemyDifficulty = -1;  /* 007: its own options set the enemies */
++                g_plmEnemyDifficulty = -1;  /* 007 (its own options set the enemies), or the split switched off: stock */
+ #endif
+                 tab_next_selected = TRUE;
+ 
+@@ -3766,7 +3767,10 @@ Gfx *constructor_menu08_difficulty(Gfx *DL)
+     //  "DIFFICULTY:\n"
+     text_sp3180 = langGet(getStringID(LTITLE, TITLE_STR_35_DIFFICULTY));
+ #ifdef __ANDROID__
+-    text_sp3180 = (u8 *)(plmEnemyStep ? "Difficulty:\n" : "Complexity:\n");
++    if (g_plmModSplitDifficulty)
++    {
++        text_sp3180 = (u8 *)(plmEnemyStep ? "Difficulty:\n" : "Complexity:\n");
++    }
+     if (plmEnemyStep)
+     {
+         unlockedDifficulty = DIFFICULTY_00;
+diff --git a/src/game/lv.c b/src/game/lv.c
+index 3007c7c1..e6e3425c 100644
+--- a/src/game/lv.c
++++ b/src/game/lv.c
+@@ -1111,8 +1111,9 @@ static s32 plmWatchFrozen = 0;
+ 
+ static s32 plmWatchTransitionFreeze(void)
+ {
++    extern int g_plmModInstantPause;  /* built-in mod switch (plm_mods.c) */
+     s32 state;
+-    if (getPlayerCount() != 1 || g_CurrentStageToLoad == LEVELID_TITLE || g_CurrentPlayer == NULL)
++    if (!g_plmModInstantPause || getPlayerCount() != 1 || g_CurrentStageToLoad == LEVELID_TITLE || g_CurrentPlayer == NULL)
+     {
+         return 0;
+     }
+diff --git a/src/game/plm_mods.c b/src/game/plm_mods.c
+new file mode 100644
+index 00000000..f8f5180b
+--- /dev/null
++++ b/src/game/plm_mods.c
+@@ -0,0 +1,20 @@
++/* [port launcher] Built-in mods (owner 2026-11-16): our gameplay features are compiled in, each behind a switch the
++ * launcher's Mods tab sets (as the port's own config keys "Plm.*", through the shim's generic configSetValue). Off is
++ * exactly the stock behaviour. On by default; the launcher sends the player's choice every launch and live. */
++#ifdef __ANDROID__
++extern void configRegisterInt(const char *key, int *value, int min, int max);
++
++int g_plmModSteadyAim = 1;          /* centred aim also stills the standing view's breathing sway (0005) */
++int g_plmModQuickWeaponSelect = 1;  /* hold next weapon for the inventory list (patch 0008) */
++int g_plmModInstantPause = 1;       /* the world stops while the watch comes up and goes away (0009) */
++int g_plmModSplitDifficulty = 1;    /* complexity, then enemy difficulty, on the difficulty screen (0010) */
++
++/* Registered before main() runs configLoad: the option tables are plain static arrays, so this is safe this early. */
++__attribute__((constructor)) static void plmModsRegister(void)
++{
++    configRegisterInt("Plm.SteadyAim", &g_plmModSteadyAim, 0, 1);
++    configRegisterInt("Plm.QuickWeaponSelect", &g_plmModQuickWeaponSelect, 0, 1);
++    configRegisterInt("Plm.InstantPause", &g_plmModInstantPause, 0, 1);
++    configRegisterInt("Plm.SplitDifficulty", &g_plmModSplitDifficulty, 0, 1);
++}
++#endif
+-- 
+2.43.0
+

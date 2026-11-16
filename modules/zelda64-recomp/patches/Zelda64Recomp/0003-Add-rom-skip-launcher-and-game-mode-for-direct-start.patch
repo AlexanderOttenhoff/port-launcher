@@ -1,0 +1,81 @@
+From 4d1c062067bf3bfac80cf6164a639ce075737238 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 15:16:29 +1100
+Subject: [PATCH 3/3] Add --rom, --skip-launcher and --game-mode for direct
+ start; no window icon on Android
+
+---
+ src/main/main.cpp | 35 ++++++++++++++++++++++++++++++++---
+ 1 file changed, 32 insertions(+), 3 deletions(-)
+
+diff --git a/src/main/main.cpp b/src/main/main.cpp
+index 41b9084..0bbc0b1 100644
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -175,7 +175,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
+     SDL_VERSION(&wmInfo.version);
+     SDL_GetWindowWMInfo(window, &wmInfo);
+ 
+-#if defined(__linux__)
++#if defined(__gnu_linux__) // as SetImageAsIcon itself; Android defines __linux__ but has no window icons
+     SetImageAsIcon("icons/512.png", window);
+ #endif
+ 
+@@ -630,9 +630,11 @@ void reorder_texture_pack(recomp::mods::ModContext&) {
+ 
+ #define REGISTER_FUNC(name) recomp::overlays::register_base_export(#name, name)
+ 
++static const char* cli_rom_path = nullptr;
++static bool cli_skip_launcher = false;
++static const char* cli_game_mode = "";
++
+ int main(int argc, char** argv) {
+-    (void)argc;
+-    (void)argv;
+     recomp::Version project_version{};
+     if (!recomp::Version::from_string(version_string, project_version)) {
+         ultramodern::error_handling::message_box(("Invalid version string: " + version_string).c_str());
+@@ -648,6 +650,21 @@ int main(int argc, char** argv) {
+         fprintf(stderr, "Failed to preload executable!\n");
+     }
+ 
++    // Arguments for launchers and handhelds, on every platform:
++    //   --rom <path>      select and validate a Majora's Mask ROM without the launcher's file picker
++    //   --skip-launcher   start the game directly once a valid ROM is stored
++    //   --game-mode <id>  with --skip-launcher: start a custom game mode (the id of an enabled mod that
++    //                     declares "custom_gamemode") instead of the base game
++    for (int i = 1; i < argc; i++) {
++        if (strcmp(argv[i], "--rom") == 0 && i + 1 < argc) {
++            cli_rom_path = argv[++i];
++        } else if (strcmp(argv[i], "--skip-launcher") == 0) {
++            cli_skip_launcher = true;
++        } else if (strcmp(argv[i], "--game-mode") == 0 && i + 1 < argc) {
++            cli_game_mode = argv[++i];
++        }
++    }
++
+ #ifdef _WIN32
+     // Set up high resolution timing period.
+     timeBeginPeriod(1);
+@@ -811,6 +828,18 @@ int main(int argc, char** argv) {
+     // Register the .rtz texture pack file format with the previous content type as its only allowed content type.
+     recomp::mods::register_mod_container_type("rtz", std::vector{ texture_pack_content_type_id }, false);
+ 
++    if (cli_rom_path != nullptr) {
++        recomp::RomValidationError rom_error = recomp::select_rom(cli_rom_path, supported_games[zelda64::Game::MM].game_id);
++        fprintf(stderr, "--rom %s: %s\n", cli_rom_path,
++            rom_error == recomp::RomValidationError::Good ? "accepted" : "rejected (wrong or modified ROM)");
++    }
++    if (cli_skip_launcher && recomp::is_rom_valid(supported_games[zelda64::Game::MM].game_id)) {
++        // As the launcher's start button does (needs the runtime's "set_dummy_vi at least once" fix).
++        recompui::update_game_mod_id(supported_games[zelda64::Game::MM].mod_game_id);
++        recomp::start_game(supported_games[zelda64::Game::MM].game_id, cli_game_mode); // empty: the base game
++        recompui::hide_all_contexts();
++    }
++
+    // Configure and start.
+     recomp::Configuration cfg;
+     cfg.project_version = project_version;
+-- 
+2.43.0
+

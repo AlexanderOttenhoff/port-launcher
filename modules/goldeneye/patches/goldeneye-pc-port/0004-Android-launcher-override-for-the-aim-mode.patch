@@ -1,0 +1,37 @@
+From fcbf2fa16bb3aa736da27c4ad8ae7f5c310f021f Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 14:22:17 +1100
+Subject: [PATCH] Android: launcher override for the aim mode
+
+---
+ port/src/input.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/port/src/input.c b/port/src/input.c
+index a51bb379..6f7b2dd3 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -1026,8 +1026,20 @@ static int aimMode = AIMMODE_N64;
+ static int aimLegacyGepd = 0;
+ static int aimStyleLegacy = 0;   /* Input.AimStyle (D333, superseded) */
+ 
++#ifdef __ANDROID__
++/* Port launcher: its "Steady aim" option (default on = Centred) overrides the
++ * saved Input.AimMode, at launch and live from its in-game menu. -1 = no override. */
++static volatile int plmAimModeOverride = -1;
++void inputPlmSetAimMode(int mode) { plmAimModeOverride = mode; }
++#endif
++
+ static int aimModeGet(void)
+ {
++#ifdef __ANDROID__
++    if (plmAimModeOverride >= 0) {
++        aimMode = plmAimModeOverride;
++    }
++#endif
+     if (aimStyleLegacy == 2 && aimMode == AIMMODE_N64) {   /* one-time migration */
+         aimMode = AIMMODE_CENTRED;
+     }
+-- 
+2.43.0
+

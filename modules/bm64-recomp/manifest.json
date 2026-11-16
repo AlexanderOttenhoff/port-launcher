@@ -1,0 +1,48 @@
+{
+  "spec": 0,
+  "id": "bm64-recomp",
+  "name": "Bomberman 64: Recompiled",
+  "version": "1.0.0+plm.1",
+  "family": "n64recomp",
+  "native_launcher": true,
+  "upstream": {
+    "repo": "https://github.com/RevoSucks/BM64Recomp",
+    "commit": "@UPSTREAM_COMMIT@"
+  },
+  "license": "GPL-3.0-only",
+  "host": {
+    "type": "sdl2",
+    "sdl": "2.32"
+  },
+  "abi": 0,
+  "platforms": [
+    "android-arm64"
+  ],
+  "graphics": {
+    "api": "vulkan",
+    "min_version": "1.2"
+  },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.bomberman-64.us",
+      "title": "Bomberman 64",
+      "game_code": "NBME",
+      "region": "US",
+      "revision": "",
+      "sha1": [
+        "8a7648d8105ac4fc1ad942291b2ef89aeca921c9"
+      ]
+    }
+  ],
+  "capabilities": {
+    "mods": [
+      "nrm"
+    ],
+    "texture_packs": [
+      "rtz"
+    ],
+    "achievements": false
+  },
+  "maturity": "experimental"
+}

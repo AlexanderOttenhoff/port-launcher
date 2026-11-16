@@ -1,0 +1,25 @@
+From b7faae69fe6823d2e3debe6de4203b6b7330224d Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 12:57:41 +1100
+Subject: [PATCH 2/3] recompinput.h: include <string> for std::string
+
+The NDK's libc++ doesn't pull it in through <chrono>.
+---
+ recompinput/include/recompinput/recompinput.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/recompinput/include/recompinput/recompinput.h b/recompinput/include/recompinput/recompinput.h
+index 855ec2e..627f1dc 100644
+--- a/recompinput/include/recompinput/recompinput.h
++++ b/recompinput/include/recompinput/recompinput.h
+@@ -2,6 +2,7 @@
+ 
+ #include "SDL.h"
+ #include "chrono"
++#include <string>
+ 
+ namespace recompinput {
+     constexpr size_t max_num_players_supported = 128;
+-- 
+2.43.0
+

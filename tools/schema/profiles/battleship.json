@@ -1,0 +1,15 @@
+[
+ {"id": "modern", "label": "Modern",
+  "detail": "Our pick for casual play, closer to later Smash games: the right stick does smash attacks, Z-cancels happen automatically, and a music selection screen.",
+  "values": {
+   "gEnhancements.CStickSmash.P1": "1", "gEnhancements.CasualRules.AutoZCancel": "1",
+   "gEnhancements.MusicSelection": "1"
+  }},
+ {"id": "competitive", "label": "Competitive",
+  "detail": "The community's competitive setup from BattleShip's own options: the competitive ruleset, neutral spawns on Dream Land, no stage hazards, no tap jump, right-stick smash attacks, and a flash on a missed Z-cancel.",
+  "values": {
+   "gEnhancements.CompRuleset": "1", "gEnhancements.NeutralSpawns": "1",
+   "gEnhancements.StageHazardsDisabled": "1", "gEnhancements.TapJumpDisabled.P1": "1",
+   "gEnhancements.CStickSmash.P1": "1", "gEnhancements.CasualRules.FailedZCancelFlash": "1"
+  }}
+]

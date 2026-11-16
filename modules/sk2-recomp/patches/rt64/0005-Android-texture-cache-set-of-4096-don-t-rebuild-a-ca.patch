@@ -1,0 +1,86 @@
+From 4712cdf1459218be993ef499017b5a13cfdc502b Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 21:56:18 +1100
+Subject: [PATCH 5/5] Android: texture cache set of 4096; don't rebuild a
+ capped set every frame, skip indices past it
+
+---
+ CMakeLists.txt                           |  2 +-
+ src/render/rt64_descriptor_sets.h        |  4 +++-
+ src/render/rt64_framebuffer_renderer.cpp | 17 +++++++++++++++++
+ 3 files changed, 21 insertions(+), 2 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 25d104f..3dd636c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -110,7 +110,7 @@ set(ANDROID_ABI arm64-v8a)
+ # For DXC
+ set (DXC_COMMON_OPTS "-I${PROJECT_SOURCE_DIR}/src")
+ if (ANDROID)
+-    list(APPEND DXC_COMMON_OPTS "-D" "RT64_TEXTURE_CACHE_SIZE=1024")
++    list(APPEND DXC_COMMON_OPTS "-D" "RT64_TEXTURE_CACHE_SIZE=4096")
+ endif()
+ set (DXC_DXIL_OPTS "-Wno-ignored-attributes")
+ set (DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+index 57cfe68..c7ffccf 100644
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -292,7 +292,9 @@ namespace RT64 {
+ 
+     struct FramebufferRendererDescriptorTextureSet : RenderDescriptorSetBase {
+ #if defined(__ANDROID__)
+-        static const int UpperRange = 1024;
++        // Blast Corps outgrew 1024 cached textures on the RP6 (Adreno 740) and crashed writing past the set
++        // (2026-11-13); 4096 must match RT64_TEXTURE_CACHE_SIZE in CMakeLists.txt (the shaders' array size).
++        static const int UpperRange = 4096;
+ #else
+         static const int UpperRange = 8192;
+ #endif
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index 31338ef..d664422 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -310,7 +310,14 @@ namespace RT64 {
+         assert(worker != nullptr);
+         assert(drawBuffers != nullptr);
+         
++#if defined(__ANDROID__)
++        // The Android set is capped (FramebufferRendererDescriptorTextureSet::UpperRange): once it's at the cap it
++        // can't grow, so don't rebuild it every frame trying to; textures past the cap are skipped below.
++        const bool createSet = (descTextureSet == nullptr) || ((descTextureSet->textureCacheSize < (textureCacheSize + 1)) &&
++            (descTextureSet->textureCacheSize < uint32_t(FramebufferRendererDescriptorTextureSet::UpperRange)));
++#else
+         const bool createSet = (descTextureSet == nullptr) || (descTextureSet->textureCacheSize < (textureCacheSize + 1));
++#endif
+         if (createSet) {
+             descTextureSet = std::make_unique<FramebufferRendererDescriptorTextureSet>(worker->device, ((textureCacheSize + 1) * 3) / 2);
+         }
+@@ -393,6 +400,11 @@ namespace RT64 {
+                 if (textureCacheTextures[i] == nullptr) {
+                     continue;
+                 }
++#if defined(__ANDROID__)
++                if (i >= descTextureSet->textureCacheSize) {
++                    continue; // past the capped set: a missing texture instead of a crash
++                }
++#endif
+ 
+                 if (textureCacheReplacementMapEnabled && (textureCacheTextureReplacements[i] != nullptr)) {
+                     descTextureSet->setTexture(i, textureCacheTextureReplacements[i]->texture.get(), RenderTextureLayout::SHADER_READ);
+@@ -409,6 +421,11 @@ namespace RT64 {
+         }
+ 
+         for (const DynamicTextureView &dynamicView : dynamicTextureViewVector) {
++#if defined(__ANDROID__)
++            if (dynamicView.dstIndex >= descTextureSet->textureCacheSize) {
++                continue;
++            }
++#endif
+             descTextureSet->setTexture(dynamicView.dstIndex, dynamicView.texture, RenderTextureLayout::SHADER_READ, dynamicView.textureView);
+             descriptorTextureVersions[dynamicView.dstIndex] = 0;
+         }
+-- 
+2.43.0
+

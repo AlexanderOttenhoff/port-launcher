@@ -1,0 +1,30 @@
+From bd18288f2ebf688f5a6730955f57a40cd9790982 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 12:16:08 +1100
+Subject: [PATCH 4/4] Android: the 256 MB memory pool in its own section (save
+ states copy only its used part)
+
+---
+ src/racing/memory.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/racing/memory.c b/src/racing/memory.c
+index 69e697033..e3f639235 100644
+--- a/src/racing/memory.c
++++ b/src/racing/memory.c
+@@ -25,6 +25,12 @@
+ s32 sGfxSeekPosition;
+ s32 sPackedSeekPosition;
+ 
++// port-launcher (Android save states): the launcher snapshots the game's globals as one section, but copying this whole
++// 256 MB pool per state is too much. An explicit section keeps it out of that section (it still is plain .bss); the
++// launcher saves only its used part, from the start up to gNextFreeMemoryAddress.
++#ifdef __ANDROID__
++__attribute__((section(".bss.plm_mk64_pool")))
++#endif
+ static u8 sMemoryPool[0x10000000] ALIGNED4096;
+ uintptr_t sPoolEnd = (uintptr_t) (sMemoryPool + sizeof(sMemoryPool));
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,75 @@
+From 6515931eb711c88c9e053ba42bc42b3610fc98fb Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 13:25:05 +1100
+Subject: [PATCH] Android: weapon wheel takes either stick; wheel pause is a
+ launcher setting
+
+---
+ src/game/activemenu.c     | 13 +++++++++----
+ src/game/activemenutick.c | 14 ++++++++++++++
+ 2 files changed, 23 insertions(+), 4 deletions(-)
+
+diff --git a/src/game/activemenu.c b/src/game/activemenu.c
+index cd8b740a0..88f957102 100644
+--- a/src/game/activemenu.c
++++ b/src/game/activemenu.c
+@@ -734,15 +734,20 @@ void amAssignWeaponSlots(void)
+ #include <stdlib.h>
+ #include "game/lv.h"
+ 
+-// Port launcher gameplay tweak "Pause on weapon wheel" (default on; launch env PLM_PD_WHEEL_PAUSE=0 turns it off).
+-// Only with one player: in split screen the others keep playing.
++// Port launcher gameplay tweak "Pause on weapon wheel" (setting pd.wheel_pause, default on): the shim calls
++// amPlmSetWheelPause from the launcher's settings. Only with one player: in split screen the others keep playing.
+ static bool g_PlmWheelPaused;
++static volatile int g_PlmWheelPauseEnabled = 1;
++
++void amPlmSetWheelPause(int on)
++{
++	g_PlmWheelPauseEnabled = on;
++}
+ 
+ static void amPlmPause(bool open)
+ {
+ 	if (open) {
+-		const char *opt = getenv("PLM_PD_WHEEL_PAUSE");
+-		if ((opt == NULL || opt[0] != '0') && PLAYERCOUNT() == 1 && !lvIsPaused() && !mpIsPaused()) {
++		if (g_PlmWheelPauseEnabled && PLAYERCOUNT() == 1 && !lvIsPaused() && !mpIsPaused()) {
+ 			lvSetPaused(true);
+ 			g_PlmWheelPaused = true;
+ 		}
+diff --git a/src/game/activemenutick.c b/src/game/activemenutick.c
+index 9eabfad3e..85ff35e56 100644
+--- a/src/game/activemenutick.c
++++ b/src/game/activemenutick.c
+@@ -8,6 +8,9 @@
+ #include "game/playermgr.h"
+ #include "game/options.h"
+ #include "bss.h"
++#ifdef __ANDROID__
++#include <stdlib.h>
++#endif
+ #include "lib/joy.h"
+ #include "lib/str.h"
+ #include "data.h"
+@@ -70,6 +73,17 @@ void amTick(void)
+ 				s8 gotonextscreen = false;
+ 				s8 cstickx = joyGetStickXOnSample(j, contpadnum);
+ 				s8 csticky = joyGetStickYOnSample(j, contpadnum);
++#ifdef __ANDROID__
++				// Port launcher: either stick points at a wheel slot. The modern layout swaps the sticks (left moves,
++				// right is the N64 stick), so without this only the right stick worked; the player can't move while
++				// the wheel is open, so the left stick is free. Take whichever is pushed further on each axis.
++				{
++					s32 rx = joyGetRStickXOnSample(j, contpadnum);
++					s32 ry = joyGetRStickYOnSample(j, contpadnum);
++					if (abs(rx) > abs(cstickx)) cstickx = rx < -128 ? -128 : (rx > 127 ? 127 : rx);
++					if (abs(ry) > abs(csticky)) csticky = ry < -128 ? -128 : (ry > 127 ? 127 : ry);
++				}
++#endif
+ #ifdef AVOID_UB
+ 				// if cstickx is -128, it will get negated and stored into absstickx, negating it again if it's 8 bit
+ 				s32 absstickx;
+-- 
+2.43.0
+

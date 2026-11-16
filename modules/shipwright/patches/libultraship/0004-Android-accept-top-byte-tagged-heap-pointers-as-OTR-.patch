@@ -1,0 +1,44 @@
+From da89c1d757c7ddeca7cf84272528d5f905c91f04 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 22:17:30 +1100
+Subject: [PATCH] Android: accept top-byte-tagged heap pointers as OTR paths
+ (text glyphs)
+
+---
+ src/fast/interpreter.cpp | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+index 730b6f2..22752d2 100644
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -4907,8 +4907,9 @@ static void gfx_step() {
+             uintptr_t w1 = (uintptr_t)cmd->words.w1;
+             if (w1 < 0x10000
+ #if UINTPTR_MAX > 0xFFFFFFFFu
+-                // On 64-bit: filter kernel/sentinel addresses.
+-                || w1 > 0x0000FFFFFFFFFFFFull
++                // On 64-bit: filter kernel/sentinel addresses. port-launcher: ignoring ARM64's top-byte heap tag,
++                // as in gfx_check_image_signature (a path string built in the heap is a valid pointer).
++                || (w1 & 0x00FFFFFFFFFFFFFFull) > 0x0000FFFFFFFFFFFFull
+ #endif
+             ) {
+                 ++g_exec_stack.currCmd();
+@@ -5354,7 +5355,13 @@ int32_t gfx_check_image_signature(const char* imgData) {
+ #if UINTPTR_MAX > 0xFFFFFFFFu
+     // On 64-bit: filter kernel/sentinel addresses. Upper bound covers all
+     // user-space layouts (x86_64 47-bit canonical, ARM64 48-bit VA, etc.).
+-    if (i > 0x0000FFFFFFFFFFFFull) {
++    // port-launcher (RP6 2026-11-13, "garbled text" in Ocarina of Time): ARM64 Android tags heap pointers in the top
++    // byte (scudo: 0xb4...; the CPU ignores it when dereferencing), so this check rejected every heap address. OoT's
++    // text glyphs are "__OTR__textures/nes_font_static/..." path strings that Font_LoadChar copies into the heap
++    // font buffer (font->charTexBuf), so they failed the signature check and the path's bytes were drawn as I4
++    // pixels: garbage instead of letters. Static paths (in the .so, untagged) were fine, so only text looked broken.
++    // Mask the tag before the range check, as newer libultraship does (Lighthouse's and Ghostship's pins).
++    if ((i & 0x00FFFFFFFFFFFFFFull) > 0x0000FFFFFFFFFFFFull) {
+         return 0;
+     }
+ #endif
+-- 
+2.43.0
+

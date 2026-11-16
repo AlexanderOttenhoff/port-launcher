@@ -1,0 +1,149 @@
+From bc02e935f6ac148227fb90ee3ff48e9e81d3621c Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 19:27:01 +1100
+Subject: [PATCH 3/4] Swap chain: setWindow, for Android apps going to the
+ background and back
+
+Android destroys an app's window when it goes to the background and
+makes a new one when it comes back, so a swap chain has to move to the
+new window. RenderSwapChain::setWindow (a no-op returning false by
+default) does that in the Vulkan backend on Android: it releases the
+swap chain and surface, and makes a surface for the new window (none
+while detached); the next resize() makes the swap chain.
+
+The Android swap chain also keeps its own reference to the window
+(ANativeWindow_acquire), since SDL releases its reference when the
+surface is destroyed, and a window without a surface reports no size.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 5878386407217825fb8fc44c6b19ddab9eb2f804)
+---
+ plume_render_interface.h |  5 ++++
+ plume_vulkan.cpp         | 59 ++++++++++++++++++++++++++++++++++++++--
+ plume_vulkan.h           |  3 ++
+ 3 files changed, 65 insertions(+), 2 deletions(-)
+
+diff --git a/plume_render_interface.h b/plume_render_interface.h
+index 2048557..719e3d0 100644
+--- a/plume_render_interface.h
++++ b/plume_render_interface.h
+@@ -101,6 +101,11 @@ namespace plume {
+         virtual RenderWindow getWindow() const = 0;
+         virtual bool isEmpty() const = 0;
+ 
++        // Moves the swap chain to another window of the same kind, or detaches it (an empty window) while there is none,
++        // as for an Android app in the background, whose window is replaced when it comes back. The next resize() makes
++        // the swap chain for the new window. Returns false when the backend doesn't support it or the window can't be used.
++        virtual bool setWindow(RenderWindow window) { (void)(window); return false; }
++
+         // Only valid if displayTiming is enabled in capabilities.
+         virtual uint32_t getRefreshRate() const = 0;
+     };
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index 0ebf6d7..a779f3d 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -2117,6 +2117,9 @@ namespace plume {
+         }
+ #   elif defined(__ANDROID__)
+         assert(desc.renderWindow != nullptr);
++        // SDL releases its reference when Android destroys the surface; this one keeps the handle valid until setWindow
++        // or the destructor lets go of it.
++        ANativeWindow_acquire(desc.renderWindow);
+         VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
+         surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+         surfaceCreateInfo.window = desc.renderWindow;
+@@ -2262,6 +2265,12 @@ namespace plume {
+             vkDestroySurfaceKHR(renderInterface->instance, surface, nullptr);
+         }
+ 
++#   if defined(__ANDROID__)
++        if (desc.renderWindow != nullptr) {
++            ANativeWindow_release(desc.renderWindow);
++        }
++#   endif
++
+         // Remove tracking from the parent command queue.
+         commandQueue->swapChains.erase(this);
+     }
+@@ -2455,6 +2464,49 @@ namespace plume {
+         return desc.renderWindow;
+     }
+ 
++#   if defined(__ANDROID__)
++    bool VulkanSwapChain::setWindow(RenderWindow window) {
++        // The old surface goes with the old window; the swap chain is made again by the next resize().
++        releaseImageViews();
++        releaseSwapChain();
++
++        VulkanInterface *renderInterface = commandQueue->device->renderInterface;
++        if (surface != VK_NULL_HANDLE) {
++            vkDestroySurfaceKHR(renderInterface->instance, surface, nullptr);
++            surface = VK_NULL_HANDLE;
++        }
++
++        if (desc.renderWindow != nullptr) {
++            ANativeWindow_release(desc.renderWindow);
++        }
++
++        desc.renderWindow = window;
++        if (window == nullptr) {
++            return true;
++        }
++
++        ANativeWindow_acquire(window);
++        VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
++        surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
++        surfaceCreateInfo.window = window;
++        VkResult res = vkCreateAndroidSurfaceKHR(renderInterface->instance, &surfaceCreateInfo, nullptr, &surface);
++        if (res != VK_SUCCESS) {
++            fprintf(stderr, "vkCreateAndroidSurfaceKHR failed with error code 0x%X.\n", res);
++            surface = VK_NULL_HANDLE;
++            return false;
++        }
++
++        VkBool32 presentSupported = false;
++        res = vkGetPhysicalDeviceSurfaceSupportKHR(commandQueue->device->physicalDevice, commandQueue->familyIndex, surface, &presentSupported);
++        if ((res != VK_SUCCESS) || !presentSupported) {
++            fprintf(stderr, "The new window's surface can't be presented to (0x%X).\n", res);
++            return false;
++        }
++
++        return true;
++    }
++#   endif
++
+     bool VulkanSwapChain::isEmpty() const {
+         return (vk == VK_NULL_HANDLE) || (width == 0) || (height == 0);
+     }
+@@ -2479,8 +2531,11 @@ namespace plume {
+ #   elif defined(PLUME_SDL_VULKAN_ENABLED)
+         SDL_GetWindowSizeInPixels(desc.renderWindow, (int *)(&dstWidth), (int *)(&dstHeight));
+ #   elif defined(__ANDROID__)
+-        dstWidth = ANativeWindow_getWidth(desc.renderWindow);
+-        dstHeight = ANativeWindow_getHeight(desc.renderWindow);
++        // No window (detached by setWindow), or one whose surface is gone (negative error codes): no size.
++        const int32_t windowWidth = (desc.renderWindow != nullptr) ? ANativeWindow_getWidth(desc.renderWindow) : 0;
++        const int32_t windowHeight = (desc.renderWindow != nullptr) ? ANativeWindow_getHeight(desc.renderWindow) : 0;
++        dstWidth = uint32_t(std::max(windowWidth, 0));
++        dstHeight = uint32_t(std::max(windowHeight, 0));
+ #   elif defined(__linux__)
+         XWindowAttributes attributes;
+         XGetWindowAttributes(desc.renderWindow.display, desc.renderWindow.window, &attributes);
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+index 0a1edbe..7fc06d8 100644
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -256,6 +256,9 @@ namespace plume {
+         uint32_t getTextureCount() const override;
+         bool acquireTexture(RenderCommandSemaphore *signalSemaphore, uint32_t *textureIndex) override;
+         RenderWindow getWindow() const override;
++#   if defined(__ANDROID__)
++        bool setWindow(RenderWindow window) override;
++#   endif
+         bool isEmpty() const override;
+         uint32_t getRefreshRate() const override;
+         void getWindowSize(uint32_t &dstWidth, uint32_t &dstHeight) const;
+-- 
+2.43.0
+

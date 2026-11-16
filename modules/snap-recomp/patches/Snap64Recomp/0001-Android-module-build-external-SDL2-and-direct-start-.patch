@@ -1,0 +1,61 @@
+From a776129d437644dda99bfed06357af76465191c3 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Sat, 14 Nov 2026 12:55:54 +1100
+Subject: [PATCH] Android module build (external SDL2) and direct start (--rom,
+ --skip-launcher, --game-mode)
+
+- CMake: SNAP_EXTERNAL_SDL2 takes find_package(SDL2) on Android, so a host
+  that brings its own SDL2 (port-launcher: one static SDL2 inside the
+  module, matching its SDL Java side) doesn't build lib/SDL.
+- main(): --rom <path> answers the first-run ROM chooser through its
+  SNAP_ROM_PICK hook; --skip-launcher and --game-mode are accepted.
+---
+ CMakeLists.txt |  5 ++++-
+ src/main.cpp   | 15 +++++++++++++--
+ 2 files changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0e5e94b..4b7792a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -79,7 +79,10 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+ # SDL2: built from the vendored tree on Windows, macOS and Android, the
+ # system's on Linux. SNAP_SDL_TARGET is what the port links; rt64 links
+ # SDL2_LIBRARIES.
+-if (WIN32 OR APPLE OR ANDROID)
++# SNAP_EXTERNAL_SDL2 (port-launcher): an Android host that brings its own SDL2 (one static SDL2 inside the module
++# library, matching the host app's SDL Java side) takes the find_package path below instead of the vendored lib/SDL.
++option(SNAP_EXTERNAL_SDL2 "Use an SDL2 found by find_package on Android instead of lib/SDL" OFF)
++if (WIN32 OR APPLE OR (ANDROID AND NOT SNAP_EXTERNAL_SDL2))
+     set(SDL_TEST OFF CACHE BOOL "" FORCE)
+     set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+     if (APPLE)
+diff --git a/src/main.cpp b/src/main.cpp
+index 2eb1cb4..67aa524 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -1683,8 +1683,19 @@ static void snap_mesa_shader_cache_dir() {
+ #endif
+ 
+ int main(int argc, char* argv[]) {
+-    (void)argc;
+-    (void)argv;
++    // Direct start (port-launcher; the same flags as the other recompilations' Android patches):
++    // --rom <path> answers the first-run ROM chooser with that file, through the chooser's own test hook
++    // (SNAP_ROM_PICK, rom_picker.cpp): the file is checked against the game's hash and copied into the data folder
++    // as pokemonsnap.z64 once, so no dialog ever shows. A ROM already in the data folder wins, as it does for a
++    // player. --skip-launcher and --game-mode <id> are accepted and ignored: this port has no launcher screen in
++    // front of the game, and no custom game modes.
++    for (int i = 1; i < argc; i++) {
++        if ((std::strcmp(argv[i], "--rom") == 0) && (i + 1 < argc)) {
++            setenv("SNAP_ROM_PICK", argv[++i], 1);
++        } else if ((std::strcmp(argv[i], "--game-mode") == 0) && (i + 1 < argc)) {
++            i++;
++        }
++    }
+ 
+ #if defined(__linux__) || defined(__APPLE__)
+     std::string lock_note;
+-- 
+2.43.0
+

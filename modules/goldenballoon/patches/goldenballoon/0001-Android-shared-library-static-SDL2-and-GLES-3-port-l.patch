@@ -1,0 +1,62 @@
+From b4beb10b25b36d87a6bf9b3b14d88efe7e6d691d Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 17:48:41 +1100
+Subject: [PATCH] Android: shared library, static SDL2 and GLES 3 (port
+ launcher)
+
+---
+ CMakeLists.txt | 24 +++++++++++++++++++++++-
+ 1 file changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2a72cc05..96b3faa6 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -111,7 +111,16 @@ endif()
+ # Native links system SDL2 + OpenGL. Under Emscripten neither exists as a
+ # package: SDL2 comes from the emcc port (-sUSE_SDL=2) and there is no GL
+ # backend in the wasm binary (WebGPU only), so skip the finders entirely.
+-if(NOT EMSCRIPTEN)
++if(ANDROID)
++    # Port launcher (Android): the host's static SDL2 (CMake config package, no pkg-config on Android) and GLES 3
++    # through EGL instead of desktop GL; gfx_opengl.c's GLES path (MGB64_PORTMASTER_GLES) does the rest.
++    find_package(SDL2 REQUIRED CONFIG)
++    get_target_property(SDL2_INCLUDE_DIRS SDL2::SDL2-static INTERFACE_INCLUDE_DIRECTORIES)
++    set(SDL2_LIBRARIES SDL2::SDL2-static)
++    add_library(OpenGL::GL INTERFACE IMPORTED)
++    set_target_properties(OpenGL::GL PROPERTIES INTERFACE_LINK_LIBRARIES "GLESv3;EGL;log;android"
++        INTERFACE_COMPILE_DEFINITIONS "MGB64_PORTMASTER_GLES")
++elseif(NOT EMSCRIPTEN)
+     find_package(PkgConfig REQUIRED)
+     pkg_check_modules(SDL2 REQUIRED sdl2)
+     if(APPLE)
+@@ -744,6 +753,18 @@ else()
+     set(MDKR_TARGET mdkr64)
+ endif()
+ 
++if(ANDROID)
++    # Port launcher: the game is a shared library the host loads (it calls main() through the module shim).
++    add_library(${MDKR_TARGET} SHARED
++        ${GAME_SOURCES}
++        ${PLATFORM_SOURCES}
++        ${FAST3D_SOURCES}
++        ${GLAD_SOURCES}
++        ${STB_SOURCES}
++        ${MINIZ_SOURCES}
++        ${DR_LIBS_SOURCES}
++    )
++else()
+ add_executable(${MDKR_TARGET}
+     ${GAME_SOURCES}
+     ${PLATFORM_SOURCES}
+@@ -753,6 +774,7 @@ add_executable(${MDKR_TARGET}
+     ${MINIZ_SOURCES}
+     ${DR_LIBS_SOURCES}
+ )
++endif()
+ target_link_libraries(${MDKR_TARGET} PRIVATE mdkr_character_text_shaping)
+ 
+ # Include layout mirrors the DKR Makefile (-I . -I include -I include/libc
+-- 
+2.43.0
+

@@ -1,0 +1,202 @@
+From daa4ab0a920ca6e1769bcaf3a5fa8cb54779bed8 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Mon, 16 Nov 2026 10:45:44 +1100
+Subject: [PATCH] Android: complexity and difficulty (the stock difficulty is
+ the mission's complexity and drives unlocks; a second step picks the enemy
+ difficulty)
+
+---
+ src/game/file.c  | 14 ++++++++++
+ src/game/front.c | 66 ++++++++++++++++++++++++++++++++++++++++++++++++
+ src/game/lv.c    | 17 +++++++++++++
+ 3 files changed, 97 insertions(+)
+
+diff --git a/src/game/file.c b/src/game/file.c
+index fc458488..693d5cc6 100644
+--- a/src/game/file.c
++++ b/src/game/file.c
+@@ -53,6 +53,20 @@ void end_of_mission_briefing(void)
+     if ((-1 < briefingpage) && selected_difficulty != DIFFICULTY_007 && g_AppendCheatSinglePlayer == FALSE)
+     {
+         var1 = solo_target_time_array[mission_folder_setup_entries[briefingpage].mission_num][selected_difficulty];
++#ifdef __ANDROID__
++        {
++            /* [port launcher] complexity and difficulty (lv.c, g_plmEnemyDifficulty): the complexity unlocks as stock;
++             * with easier enemies than the complexity, the run saves no time (99999999 = completed, no time, as the
++             * game records lower difficulties) and earns no cheat, so times and cheats stay comparable. */
++            extern s32 g_plmEnemyDifficulty;
++            if (g_plmEnemyDifficulty >= DIFFICULTY_AGENT && g_plmEnemyDifficulty < selected_difficulty)
++            {
++                fileUnlockStageInFolderAtDifficulty(selected_folder_num, mission_folder_setup_entries[briefingpage].mission_num, selected_difficulty, 99999999);
++                g_NewCheatUnlocked = FALSE;
++                return;
++            }
++        }
++#endif
+         fileUnlockStageInFolderAtDifficulty(selected_folder_num, mission_folder_setup_entries[briefingpage].mission_num, selected_difficulty, getMissiontimer() / 0x3c);
+         if ((getMissiontimer() / GAME_TICKRATE) <= var1)
+         {
+diff --git a/src/game/front.c b/src/game/front.c
+index 4c2a68fa..23e51b8d 100644
+--- a/src/game/front.c
++++ b/src/game/front.c
+@@ -3498,8 +3498,21 @@ Gfx *constructor_menu07_missionsel(Gfx *DL)
+ //********************************************************************************************************
+ //DIFFICULTY SELECT
+ //********************************************************************************************************
++#ifdef __ANDROID__
++/* [port launcher] Complexity, then difficulty (owner 2026-11-16). The stock screen (step 0) picks the mission's
++ * complexity: only unlocked ones, with the completion ticks, and it drives unlocks as before. Picking Agent, Secret
++ * Agent or 00 Agent then shows step 1 on the same screen: the enemy difficulty (lv.c, g_plmEnemyDifficulty), all three
++ * always offered, the complexity preselected, so A twice plays stock. B or the previous tab returns to step 0. 007
++ * skips step 1 (its options screen sets the enemies). A step of the same menu rather than a new menu id, so the
++ * menu tables sized by the menu count stay as they are. */
++extern s32 g_plmEnemyDifficulty;
++static s32 plmEnemyStep = 0;
++#endif
+ void init_menu08_difficultyselect(void)
+ {
++#ifdef __ANDROID__
++    plmEnemyStep = 0;
++#endif
+     selected_difficulty = DIFFICULTY_MULTI;
+     tab_next_selected = FALSE;
+     tab_prev_selected = FALSE;
+@@ -3516,6 +3529,12 @@ void interface_menu08_difficulty(void)
+     s32 unlockedDifficulty;
+ 
+     unlockedDifficulty = get_highest_unlocked_difficulty_for_level(mission_folder_setup_entries[briefingpage].mission_num);
++#ifdef __ANDROID__
++    if (plmEnemyStep)
++    {
++        unlockedDifficulty = DIFFICULTY_00;  /* every enemy difficulty, never 007 */
++    }
++#endif
+     viSetFovY(FOV_Y_F);
+     viSetAspect(ASPECT_RATIO_SD);
+     viSetZRange(100.0f, 10000.0f);
+@@ -3559,9 +3578,29 @@ void interface_menu08_difficulty(void)
+         }
+         else
+         {
++#ifdef __ANDROID__
++            if (plmEnemyStep && mission_difficulty_highlighted >= DIFFICULTY_AGENT)
++            {
++                g_plmEnemyDifficulty = mission_difficulty_highlighted;
++                tab_next_selected = TRUE;
++                sndPlaySfx(g_musicSfxBufferPtr, PAPER_TURN_SFX, NULL);
++            }
++            else if (mission_difficulty_highlighted >= DIFFICULTY_AGENT && mission_difficulty_highlighted <= DIFFICULTY_00)
++            {
++                selected_difficulty = mission_difficulty_highlighted;
++                plmEnemyStep = 1;
++                set_cursor_pos_difficulty(selected_difficulty);
++                sndPlaySfx(g_musicSfxBufferPtr, PAPER_TURN_SFX, NULL);
++                return;
++            }
++            else
++#endif
+             if (mission_difficulty_highlighted >= DIFFICULTY_AGENT)
+             {
+                 selected_difficulty = mission_difficulty_highlighted;
++#ifdef __ANDROID__
++                g_plmEnemyDifficulty = -1;  /* 007: its own options set the enemies */
++#endif
+                 tab_next_selected = TRUE;
+ 
+                 sndPlaySfx(g_musicSfxBufferPtr, PAPER_TURN_SFX, NULL);
+@@ -3593,6 +3632,17 @@ void interface_menu08_difficulty(void)
+     }
+     if (tab_prev_selected)
+     {
++#ifdef __ANDROID__
++        if (plmEnemyStep)
++        {
++            /* back to the complexity step, on the complexity that was picked */
++            plmEnemyStep = 0;
++            tab_prev_selected = FALSE;
++            set_cursor_pos_difficulty(selected_difficulty);
++            selected_difficulty = DIFFICULTY_MULTI;
++            return;
++        }
++#endif
+         frontChangeMenu(MENU_MISSION_SELECT, FALSE);
+         set_cursor_to_stage_solo(mission_folder_setup_entries[briefingpage].mission_num);
+     }
+@@ -3715,6 +3765,13 @@ Gfx *constructor_menu08_difficulty(Gfx *DL)
+ 
+     //  "DIFFICULTY:\n"
+     text_sp3180 = langGet(getStringID(LTITLE, TITLE_STR_35_DIFFICULTY));
++#ifdef __ANDROID__
++    text_sp3180 = (u8 *)(plmEnemyStep ? "Difficulty:\n" : "Complexity:\n");
++    if (plmEnemyStep)
++    {
++        unlockedDifficulty = DIFFICULTY_00;
++    }
++#endif
+     x = 0x37;
+     y = 0x8F;
+     DL = frontPrintText(DL, &x, &y, text_sp3180, ptrFontZurichBoldChars, ptrFontZurichBold, 0xFF, viGetX(), viGetY(), 0, 0);
+@@ -3736,6 +3793,12 @@ Gfx *constructor_menu08_difficulty(Gfx *DL)
+     */
+     for (i=0; i<DIFFICULTY_MAX; i++)
+     {
++#ifdef __ANDROID__
++        if (plmEnemyStep && i == DIFFICULTY_007)
++        {
++            continue;
++        }
++#endif
+         if (i == 0 || unlockedDifficulty >= i)
+         {
+             if (j_text_trigger)
+@@ -3798,6 +3861,9 @@ Gfx *constructor_menu08_difficulty(Gfx *DL)
+     for (i=0; i<3; i++)
+     {
+         if ((i == 0 || unlockedDifficulty >= i)
++#ifdef __ANDROID__
++            && !plmEnemyStep  /* completion ticks belong to the complexity step */
++#endif
+             && (check_if_stage_completed_on_difficulty(briefingpage, i) == 3))
+         {
+             image = &mainfolderimages[IMAGE_CHECK];
+diff --git a/src/game/lv.c b/src/game/lv.c
+index e0af14a9..3007c7c1 100644
+--- a/src/game/lv.c
++++ b/src/game/lv.c
+@@ -965,8 +965,22 @@ Gfx* lvlRender(Gfx* DL)
+  *
+  * address 0x7F0BE8D0
+  */
++#ifdef __ANDROID__
++/* [port launcher] Complexity and difficulty (owner 2026-11-16): the stock difficulty select is the mission's
++ * complexity (objectives, which guards and objects exist, level scripts) and drives unlocks as before; this is the
++ * enemy difficulty chosen on the screen after it (front.c), which sets only the combat tuning below (enemy accuracy,
++ * damage, health, reaction speed, ammo from drops). -1 = same as the complexity (stock). Not used for 007, whose own
++ * options already set the enemies. */
++s32 g_plmEnemyDifficulty = -1;
++#endif
+ void lvlSetMultipliersForDifficulty(void)
+ {
++#ifdef __ANDROID__
++    s32 plmDifficulty = (g_SelectedDifficulty >= DIFFICULTY_AGENT && g_SelectedDifficulty <= DIFFICULTY_00
++                         && g_plmEnemyDifficulty >= DIFFICULTY_AGENT && g_plmEnemyDifficulty <= DIFFICULTY_00)
++                        ? g_plmEnemyDifficulty : g_SelectedDifficulty;
++#define g_SelectedDifficulty plmDifficulty
++#endif
+     if (g_SelectedDifficulty == DIFFICULTY_AGENT)
+     {
+         f32 armorDiff = currentPlayerGetHealth() + currentPlayerGetArmor();
+@@ -1067,6 +1081,9 @@ void lvlSetMultipliersForDifficulty(void)
+         g_SoloAmmoMultiplier = DEFAULT_007_SOLO_AMMO_MULTIPLIER;
+         g_AiReactionSpeed = DEFAULT_007_AI_REACTION_SPEED;
+     }
++#ifdef __ANDROID__
++#undef g_SelectedDifficulty
++#endif
+ }
+ 
+ 
+-- 
+2.43.0
+

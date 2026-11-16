@@ -1,0 +1,57 @@
+From 43f951698701782ded06280c73b6d1c39e1aed19 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 19:27:01 +1100
+Subject: [PATCH 5/5] Application::setPresentWindow, for Android apps going to
+ the background
+
+Moves presentation to another window, or detaches it while there is
+none, waiting for the present thread and the GPU so the old window is no
+longer used once it returns. Updates plume to RenderSwapChain::setWindow.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 95dc220fbac8e861e775e10f6919b63931057902)
+---
+ src/hle/rt64_application.cpp | 11 +++++++++++
+ src/hle/rt64_application.h   |  4 ++++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/src/hle/rt64_application.cpp b/src/hle/rt64_application.cpp
+index 141b8cd..f49be92 100644
+--- a/src/hle/rt64_application.cpp
++++ b/src/hle/rt64_application.cpp
+@@ -529,6 +529,17 @@ namespace RT64 {
+         rasterShaderCache->destroyAll();
+     }
+ 
++    bool Application::setPresentWindow(RenderWindow window) {
++        std::unique_lock<std::mutex> threadLock(presentQueue->threadMutex);
++        presentGraphicsWorker->commandList->begin();
++        presentGraphicsWorker->commandList->end();
++        presentGraphicsWorker->execute();
++        presentGraphicsWorker->wait();
++        presentQueue->swapChainFramebuffers.clear();
++        appWindow->windowHandle = window;
++        return swapChain->setWindow(window);
++    }
++
+     void Application::updateMultisampling() {
+ #   if SAMPLE_LOCATIONS_REQUIRED
+         // This operation does nothing if sample locations isn't supported.
+diff --git a/src/hle/rt64_application.h b/src/hle/rt64_application.h
+index 6c83fe0..1d6a2b7 100644
+--- a/src/hle/rt64_application.h
++++ b/src/hle/rt64_application.h
+@@ -158,6 +158,10 @@ namespace RT64 {
+         void updateScreen();
+         void destroyShaderCache();
+         void updateMultisampling();
++        // Moves presentation to another window, or detaches it (an empty window) while there is none: an Android app's
++        // window is destroyed when it goes to the background and replaced when it comes back. Waits for the present
++        // thread, so a window being destroyed is no longer used once this returns.
++        bool setPresentWindow(RenderWindow window);
+         void end();
+         bool loadConfiguration();
+         bool saveConfiguration();
+-- 
+2.43.0
+

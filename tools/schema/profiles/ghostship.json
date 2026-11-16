@@ -1,0 +1,18 @@
+[
+ {"id": "modern", "label": "Modern",
+  "detail": "Our pick for a first playthrough: 60 fps, the power meter always on screen, and every bug fix. The game plays as designed otherwise.",
+  "values": {
+   "gSettings.InterpolationFPS": "60", "gEnhancements.AlwaysShowPowerMeter": "1",
+   "gEnhancements.FixKoopaRaceMusic": "1", "gEnhancements.FixHeaveHoSinkingThroughFloor": "1",
+   "gEnhancements.FixFileSelectButtonTilt": "1", "gEnhancements.FixYoshiDialogueTypo": "1"
+  }},
+ {"id": "modern-returning", "label": "Modern: returning player",
+  "detail": "Modern plus what players who know the game skip: the Peach and Lakitu intro, and collecting a star no longer throws you out of the level.",
+  "values": {
+   "gSettings.InterpolationFPS": "60", "gEnhancements.AlwaysShowPowerMeter": "1",
+   "gEnhancements.FixKoopaRaceMusic": "1", "gEnhancements.FixHeaveHoSinkingThroughFloor": "1",
+   "gEnhancements.FixFileSelectButtonTilt": "1", "gEnhancements.FixYoshiDialogueTypo": "1",
+   "gEnhancements.DisablePeachCutscene": "1", "gEnhancements.DisableLakituCutscene": "1",
+   "gEnhancements.StarNoExit": "1"
+  }}
+]

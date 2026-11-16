@@ -1,0 +1,243 @@
+From 0610d5ca9872da2e48d2726ece9d8c4ac953a0b1 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 18:47:39 +1100
+Subject: [PATCH 2/5] Android: native window, RGBA8 presentation, boundless
+ texture cache set
+
+- Application window: SDL display bounds, a fullscreen window and the
+  ANativeWindow handle from SDL_SysWMinfo.
+- Present RGBA8 on Android, the only format Android surfaces guarantee.
+- Texture cache descriptor arrays of 1024 on Android
+  (RT64_TEXTURE_CACHE_SIZE), keeping the set boundless
+  (update-after-bind, partially bound, variable count); Adreno lost the
+  device when those flags were dropped.
+- Integer-scale resolution rounds down on Android.
+
+Everything is behind __ANDROID__ / if (ANDROID). Tested on a Retroid
+Pocket 6 (Adreno 740).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit ed54bfeefc5674fe572b71867822edbd13826c57)
+---
+ CMakeLists.txt                      |  3 +++
+ src/hle/rt64_application.cpp        |  5 ++++
+ src/hle/rt64_application_window.cpp | 36 +++++++++++++++++++++++++++--
+ src/hle/rt64_workload_queue.cpp     |  4 ++++
+ src/render/rt64_descriptor_sets.h   | 12 ++++++++++
+ src/render/rt64_shader_library.cpp  |  5 ++++
+ src/shaders/FbRendererCommon.hlsli  |  8 +++++--
+ 7 files changed, 69 insertions(+), 4 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index b879246..25d104f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -109,6 +109,9 @@ set(ANDROID_ABI arm64-v8a)
+ 
+ # For DXC
+ set (DXC_COMMON_OPTS "-I${PROJECT_SOURCE_DIR}/src")
++if (ANDROID)
++    list(APPEND DXC_COMMON_OPTS "-D" "RT64_TEXTURE_CACHE_SIZE=1024")
++endif()
+ set (DXC_DXIL_OPTS "-Wno-ignored-attributes")
+ set (DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
+ set (DXC_LB_OPTS "${DXC_COMMON_OPTS}" "-D" "LIBRARY" "-T" "lib_6_3")
+diff --git a/src/hle/rt64_application.cpp b/src/hle/rt64_application.cpp
+index ee8bc1f..6ca1599 100644
+--- a/src/hle/rt64_application.cpp
++++ b/src/hle/rt64_application.cpp
+@@ -325,7 +325,12 @@ namespace RT64 {
+         // Create the swap chain with the texture count specified from the configuration.
+         RenderSwapChainDesc swapChainDesc;
+         swapChainDesc.renderWindow = appWindow->windowHandle;
++#ifdef __ANDROID__
++        // Android guarantees RGBA8 surfaces, not desktop BGRA8. The VI pipeline in the shader library must match.
++        swapChainDesc.format = RenderFormat::R8G8B8A8_UNORM;
++#else
+         swapChainDesc.format = RenderFormat::B8G8R8A8_UNORM;
++#endif
+         swapChainDesc.textureCount = (userConfig.displayBuffering == UserConfiguration::DisplayBuffering::Triple) ? 3 : 2;
+ 
+         // Enable present wait if supported by the device. We specify a max latency of 1 as we use it to wait right before the next
+diff --git a/src/hle/rt64_application_window.cpp b/src/hle/rt64_application_window.cpp
+index 08f83e5..b0844db 100755
+--- a/src/hle/rt64_application_window.cpp
++++ b/src/hle/rt64_application_window.cpp
+@@ -11,6 +11,7 @@
+ #if defined(_WIN32)
+ #   include <Windows.h>
+ #   include <ShellScalingAPI.h>
++#elif defined(__ANDROID__)
+ #elif defined(__linux__)
+ #   define Status int
+ #   if !defined(RT64_SDL_WINDOW_VULKAN)
+@@ -23,6 +24,8 @@
+ 
+ #include "common/rt64_common.h"
+ 
++#include <SDL_syswm.h>
++
+ namespace RT64 {
+     // ApplicationWindow
+ 
+@@ -104,7 +107,21 @@ namespace RT64 {
+         bounds.width = rect.right - rect.left;
+         bounds.height = rect.bottom - rect.top;
+ #   elif defined(__ANDROID__)
+-        static_assert(false && "Android unimplemented");
++        if (SDL_VideoInit(nullptr) != 0) {
++            printf("Failed to init SDL2 video: %s\n", SDL_GetError());
++            assert(false && "Failed to init SDL2 video");
++            return;
++        }
++        SDL_DisplayMode dm;
++        if (SDL_GetCurrentDisplayMode(0, &dm) != 0) {
++            printf("Failed to get SDL2 current display mode: %s\n", SDL_GetError());
++            assert(false && "Failed to get SDL2 current display mode");
++            return;
++        }
++        bounds.left = 0;
++        bounds.top = 0;
++        bounds.width = dm.w;
++        bounds.height = dm.h;
+ #   elif defined(__linux__) || defined(__APPLE__)
+         if (SDL_VideoInit(nullptr) != 0) {
+             printf("Failed to init SDL2 video: %s\n", SDL_GetError());
+@@ -136,6 +153,9 @@ namespace RT64 {
+         # elif defined(RT64_SDL_WINDOW_VULKAN)
+         flags |= SDL_WINDOW_VULKAN;
+         #endif
++#       if defined(__ANDROID__)
++        flags |= SDL_WINDOW_FULLSCREEN;
++#       endif
+         sdlWindow = SDL_CreateWindow(windowTitle, bounds.left, bounds.top, bounds.width, bounds.height, flags);
+         assert((sdlWindow != nullptr) && "Failed to open window with SDL");
+ 
+@@ -148,7 +168,8 @@ namespace RT64 {
+ #   elif defined(RT64_SDL_WINDOW_VULKAN)
+         windowHandle = sdlWindow;
+ #   elif defined(__ANDROID__)
+-        static_assert(false && "Android unimplemented");
++        assert(wmInfo.subsystem == SDL_SYSWM_ANDROID);
++        windowHandle = wmInfo.info.android.window;
+ #   elif defined(__linux__)
+         windowHandle.display = wmInfo.info.x11.display;
+         windowHandle.window = wmInfo.info.x11.window;
+@@ -293,6 +314,14 @@ namespace RT64 {
+             return;
+         }
+ 
++        refreshRate = displayMode.refresh_rate;
++#   elif defined(__ANDROID__)
++        SDL_DisplayMode displayMode = {};
++        if (SDL_GetCurrentDisplayMode(0, &displayMode) != 0) {
++            fprintf(stderr, "SDL_GetCurrentDisplayMode failed. Error: %s.\n", SDL_GetError());
++            return;
++        }
++
+         refreshRate = displayMode.refresh_rate;
+ #   elif defined(__linux__)
+         // Sourced from: https://stackoverflow.com/a/66865623
+@@ -349,6 +378,9 @@ namespace RT64 {
+         newWindowTop = rect.top;
+ #   elif defined(RT64_SDL_WINDOW_VULKAN)
+         SDL_GetWindowPosition(windowHandle, &newWindowLeft, &newWindowTop);
++#   elif defined(__ANDROID__)
++        newWindowLeft = 0;
++        newWindowTop = 0;
+ #   elif defined(__linux__)
+         XWindowAttributes attributes;
+         XGetWindowAttributes(windowHandle.display, windowHandle.window, &attributes);
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+index 89f2425..d111bc4 100644
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -190,7 +190,11 @@ namespace RT64 {
+         switch (resolutionMode) {
+         case UserConfiguration::Resolution::WindowIntegerScale:
+             if (ext.sharedResources->swapChainHeight > 0) {
++#           if defined(__ANDROID__)
++                resolutionMultiplier = std::max(float(ext.sharedResources->swapChainHeight / referenceHeight), 1.0f);
++#           else
+                 resolutionMultiplier = std::max(float((ext.sharedResources->swapChainHeight + referenceHeight - 1) / referenceHeight), 1.0f);
++#           endif
+             }
+             else {
+                 resolutionMultiplier = 1.0f;
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+index 69a82ac..57cfe68 100644
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -291,18 +291,30 @@ namespace RT64 {
+     };
+ 
+     struct FramebufferRendererDescriptorTextureSet : RenderDescriptorSetBase {
++#if defined(__ANDROID__)
++        static const int UpperRange = 1024;
++#else
+         static const int UpperRange = 8192;
++#endif
+ 
+         uint32_t textureCacheSize = 0;
+         uint32_t gTextures;
+         uint32_t gTMEM;
+ 
+         FramebufferRendererDescriptorTextureSet(RenderDevice *device = nullptr, uint32_t textureCacheSize = 0) {
++#if defined(__ANDROID__)
++            // The variable count can't exceed the declared range (and the shaders' RT64_TEXTURE_CACHE_SIZE).
++            if (textureCacheSize > UpperRange) {
++                fprintf(stderr, "Texture cache wants %u descriptors; Android build is limited to %d.\n", textureCacheSize, UpperRange);
++                textureCacheSize = UpperRange;
++            }
++#endif
+             this->textureCacheSize = textureCacheSize;
+ 
+             builder.begin();
+             gTextures = builder.addTexture(0, UpperRange);
+             gTMEM = gTextures;
++            // Boundless: update-after-bind and partially bound, which the texture cache relies on.
+             builder.end(true, textureCacheSize);
+ 
+             if (device != nullptr) {
+diff --git a/src/render/rt64_shader_library.cpp b/src/render/rt64_shader_library.cpp
+index d1c5273..b79c3d1 100644
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -599,7 +599,12 @@ namespace RT64 {
+             RenderGraphicsPipelineDesc pipelineDesc;
+             pipelineDesc.vertexShader = fullScreenVertexShader.get();
+             pipelineDesc.pixelShader = regularShader.get();
++#ifdef __ANDROID__
++            // Must match the Android swap chain format in Application.
++            pipelineDesc.renderTargetFormat[0] = RenderFormat::R8G8B8A8_UNORM;
++#else
+             pipelineDesc.renderTargetFormat[0] = RenderFormat::B8G8R8A8_UNORM; // TODO: Use whatever format the swap chain was created with.
++#endif
+             pipelineDesc.renderTargetBlend[0] = RenderBlendDesc::Copy();
+             pipelineDesc.renderTargetCount = 1;
+             pipelineDesc.pipelineLayout = videoInterfaceNearest.pipelineLayout.get();
+diff --git a/src/shaders/FbRendererCommon.hlsli b/src/shaders/FbRendererCommon.hlsli
+index bc250a2..7771766 100644
+--- a/src/shaders/FbRendererCommon.hlsli
++++ b/src/shaders/FbRendererCommon.hlsli
+@@ -39,11 +39,15 @@ SamplerState gNearestClampWrapSampler : register(s22, space0);
+ SamplerState gNearestClampMirrorSampler : register(s23, space0);
+ SamplerState gNearestClampClampSampler : register(s24, space0);
+ 
++#ifndef RT64_TEXTURE_CACHE_SIZE
++#define RT64_TEXTURE_CACHE_SIZE 8192
++#endif
++
+ // Set 1 - RGBA32 texture cache.
+-Texture2D<float4> gTextures[8192] : register(t0, space1);
++Texture2D<float4> gTextures[RT64_TEXTURE_CACHE_SIZE] : register(t0, space1);
+ 
+ // Set 2 - TMEM texture cache.
+-Texture1D<uint> gTMEM[8192] : register(t0, space2);
++Texture1D<uint> gTMEM[RT64_TEXTURE_CACHE_SIZE] : register(t0, space2);
+ 
+ // Set 3 - Framebuffer.
+ ConstantBuffer<FramebufferParams> FbParams : register(b0, space3);
+-- 
+2.43.0
+

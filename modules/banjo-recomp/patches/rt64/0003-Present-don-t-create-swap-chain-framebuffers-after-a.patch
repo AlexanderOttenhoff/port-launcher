@@ -1,0 +1,37 @@
+From 9d47074a456da1dd8c4d0aa0e74780a2a52bfc49 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 19:24:59 +1100
+Subject: [PATCH 3/5] Present: don't create swap chain framebuffers after a
+ failed resize
+
+A failed resize() releases the swap chain's image views before it fails
+(the surface is gone or has no size), and threadPresent then created
+framebuffers from those null views. The Adreno driver crashed in
+vkCreateFramebuffer when an Android app went to the background. The
+framebuffers were only used while the swap chain is valid anyway.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 1d22201c8ac76eb0ade7678c1b6dce4f256942fe)
+---
+ src/hle/rt64_present_queue.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
+index 3227ab1..b1e2b5a 100644
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -256,8 +256,9 @@ namespace RT64 {
+             }
+         }
+ 
+-        // Create the framebuffers if necessary.
+-        if (swapChainFramebuffers.empty()) {
++        // Create the framebuffers if necessary. Not after a failed resize: the swap chain's image views are gone then (the
++        // driver crashed creating framebuffers from them on Android when the app went to the background).
++        if (swapChainValid && swapChainFramebuffers.empty()) {
+             uint32_t textureCount = ext.swapChain->getTextureCount();
+             swapChainFramebuffers.resize(textureCount);
+             for (uint32_t i = 0; i < textureCount; i++) {
+-- 
+2.43.0
+

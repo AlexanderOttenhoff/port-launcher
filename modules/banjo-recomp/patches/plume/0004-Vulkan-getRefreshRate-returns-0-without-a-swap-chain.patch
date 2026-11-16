@@ -1,0 +1,34 @@
+From 1dc8526d9dda95dd3fd5eead0ca5032ec8435edd Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 19:57:00 +1100
+Subject: [PATCH 4/4] Vulkan: getRefreshRate returns 0 without a swap chain
+
+vkGetRefreshCycleDurationGOOGLE was called with a null swap chain after a
+failed resize (Android's loader crashed in it when the app went to the
+background). Callers already treat 0 as unknown.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 6d53f7e7ea2a35bb8fb5590180935a03f54235f6)
+---
+ plume_vulkan.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index a779f3d..087fc06 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -2512,6 +2512,11 @@ namespace plume {
+     }
+ 
+     uint32_t VulkanSwapChain::getRefreshRate() const {
++        // No swap chain (a failed resize, or no window): the driver would dereference it.
++        if (vk == VK_NULL_HANDLE) {
++            return 0;
++        }
++
+         VkRefreshCycleDurationGOOGLE refreshCycle = {};
+         VkResult res = vkGetRefreshCycleDurationGOOGLE(commandQueue->device->vk, vk, &refreshCycle);
+         if (res != VK_SUCCESS) {
+-- 
+2.43.0
+

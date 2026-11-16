@@ -1,0 +1,8 @@
+# Modules left out of the APK for now (one id per line), without deleting them. Their sources stay: other modules
+# may reuse their patches (modules/banjo-recomp/patches serves every RecompFrontend game).
+# banjo-recomp: Banjo-Kazooie already plays through the Lighthouse decomp; a second BK port was confusing (owner,
+# 2026-11-13). Its Thunderstore mods and total conversions (Nostalgia 64) go with it until it returns.
+banjo-recomp
+# zelda64-recomp: Majora's Mask already plays through the 2 Ship 2 Harkinian decomp (owner, 2026-11-13); a second
+# MM port was a duplicate. Its Thunderstore mods go with it until it returns.
+zelda64-recomp

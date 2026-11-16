@@ -1,0 +1,329 @@
+From a258694cd7741ff84fc7c1725cacb3c658671cb9 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <alexander.ottenhoff@gmail.com>
+Date: Sat, 14 Nov 2026 12:38:33 +1100
+Subject: [PATCH 1/3] Android build and direct start for port-launcher (shared
+ library, --rom, APP_FOLDER_PATH, no crash handler, nfd stub, host DXC)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ CMakeLists.txt                   |  28 +++++-
+ src/android/nfd_android_stub.cpp | 147 +++++++++++++++++++++++++++++++
+ src/crash_handler.cpp            |  25 ++++++
+ src/main.cpp                     |  36 ++++++++
+ 4 files changed, 234 insertions(+), 2 deletions(-)
+ create mode 100644 src/android/nfd_android_stub.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 524e99b..7158c8d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -106,6 +106,16 @@ if(BH_WITH_RUNTIME)
+         add_compile_definitions(PLUME_SDL_VULKAN_ENABLED RT64_SDL_WINDOW_VULKAN)
+     endif()
+ 
++    # Android (port-launcher module): RT64 links nfd, which has no Android
++    # backend; give it a stub that reports "cancel" (the ROM comes from the
++    # launcher, nothing here ever opens a file dialog). Same stub as the
++    # port-launcher's other recomp modules (from Zelda64Recomp-Android).
++    if(ANDROID AND NOT TARGET nfd)
++        add_library(nfd STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/android/nfd_android_stub.cpp")
++        target_include_directories(nfd PUBLIC
++            "${BH_LIB_DIR}/RT64/src/contrib/nativefiledialog-extended/src/include")
++    endif()
++
+     add_subdirectory("${BH_LIB_DIR}/RT64" EXCLUDE_FROM_ALL)
+     add_subdirectory("${BH_LIB_DIR}/N64ModernRuntime" EXCLUDE_FROM_ALL)
+ endif()
+@@ -164,7 +174,9 @@ if(BH_WITH_FRONTEND)
+     # RT64 vendors all of them under contrib/dxc; this mirrors the selection
+     # RT64 makes for itself in lib/RT64/CMakeLists.txt.
+     set(BH_RT64_DIR "${BH_LIB_DIR}/RT64")
+-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
++    # DXC runs on the build machine, so it is chosen by the *host* CPU: an
++    # Android arm64 cross build on an x86-64 host needs the x64 dxc-linux.
++    if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+         set(BH_DXC_ARCH arm64)
+     else()
+         set(BH_DXC_ARCH x64)
+@@ -292,7 +304,14 @@ if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/app.rc")
+     list(APPEND BH_SOURCES src/app.rc)
+ endif()
+ 
+-add_executable(body-harvest-recomp ${BH_SOURCES})
++# On Android the game is a shared library that the launcher's activity loads
++# (port-launcher module; its module.cmake adds the entry-point shim and renames
++# the output). Everywhere else it is the executable.
++if(ANDROID)
++    add_library(body-harvest-recomp SHARED ${BH_SOURCES})
++else()
++    add_executable(body-harvest-recomp ${BH_SOURCES})
++endif()
+ 
+ # On macOS the product is an application bundle, not a bare executable: it is
+ # what the player double-clicks, it is what carries the assets, and it is what
+@@ -344,6 +363,11 @@ if(NOT WIN32)
+     endif()
+ endif()
+ 
++if(ANDROID)
++    target_include_directories(body-harvest-recomp PRIVATE ${SDL2_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
++    target_link_libraries(body-harvest-recomp PRIVATE ${FREETYPE_LIBRARY} android log)
++endif()
++
+ if(BH_WITH_RUNTIME)
+     target_link_libraries(body-harvest-recomp PRIVATE rt64 ultramodern librecomp)
+     if(WIN32)
+diff --git a/src/android/nfd_android_stub.cpp b/src/android/nfd_android_stub.cpp
+new file mode 100644
+index 0000000..cc946a4
+--- /dev/null
++++ b/src/android/nfd_android_stub.cpp
+@@ -0,0 +1,147 @@
++// Android has no native file dialog backend; file dialogs report cancel. Via JFG Android port.
++// From Zelda64Recomp-Android (linkzenic).
++#include "nfd.h"
++
++#include <cstdlib>
++
++namespace {
++constexpr const char* kUnavailable = "Native file dialogs are unavailable on Android.";
++}
++
++extern "C" {
++
++NFD_API void NFD_FreePathN(nfdnchar_t* filePath) {
++    std::free(filePath);
++}
++
++NFD_API void NFD_FreePathU8(nfdu8char_t* filePath) {
++    std::free(filePath);
++}
++
++NFD_API nfdresult_t NFD_Init(void) {
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_Quit(void) {
++}
++
++NFD_API nfdresult_t NFD_OpenDialogN(nfdnchar_t** outPath, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogU8(nfdu8char_t** outPath, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogMultipleN(const nfdpathset_t** outPaths, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*) {
++    if (outPaths != nullptr) {
++        *outPaths = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogMultipleU8(const nfdpathset_t** outPaths, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*) {
++    if (outPaths != nullptr) {
++        *outPaths = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_SaveDialogN(nfdnchar_t** outPath, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_SaveDialogU8(nfdu8char_t** outPath, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_PickFolderN(nfdnchar_t** outPath, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_PickFolderU8(nfdu8char_t** outPath, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API const char* NFD_GetError(void) {
++    return kUnavailable;
++}
++
++NFD_API void NFD_ClearError(void) {
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetCount(const nfdpathset_t*, nfdpathsetsize_t* count) {
++    if (count != nullptr) {
++        *count = 0;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetPathN(const nfdpathset_t*, nfdpathsetsize_t, nfdnchar_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_ERROR;
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetPathU8(const nfdpathset_t*, nfdpathsetsize_t, nfdu8char_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_ERROR;
++}
++
++NFD_API void NFD_PathSet_FreePathN(const nfdnchar_t* filePath) {
++    std::free(const_cast<nfdnchar_t*>(filePath));
++}
++
++NFD_API void NFD_PathSet_FreePathU8(const nfdu8char_t* filePath) {
++    std::free(const_cast<nfdu8char_t*>(filePath));
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetEnum(const nfdpathset_t*, nfdpathsetenum_t* outEnumerator) {
++    if (outEnumerator != nullptr) {
++        outEnumerator->ptr = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_PathSet_FreeEnum(nfdpathsetenum_t*) {
++}
++
++NFD_API nfdresult_t NFD_PathSet_EnumNextN(nfdpathsetenum_t*, nfdnchar_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API nfdresult_t NFD_PathSet_EnumNextU8(nfdpathsetenum_t*, nfdu8char_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_PathSet_Free(const nfdpathset_t*) {
++}
++
++}
+diff --git a/src/crash_handler.cpp b/src/crash_handler.cpp
+index 3374c13..be01fc2 100644
+--- a/src/crash_handler.cpp
++++ b/src/crash_handler.cpp
+@@ -495,6 +495,31 @@ void install_crash_handler() {
+ 
+ }  // namespace bh
+ 
++#elif defined(__ANDROID__)
++
++// Android (port-launcher module): no handler of our own. Why: bionic only has
++// <execinfo.h>/backtrace() from API 33 and the module targets API 28, the
++// stale-read trick below is x86-64-only anyway (it returns false on arm64), and
++// Android's debuggerd already writes a symbolised tombstone for any fault --
++// a SIGSEGV handler installed here would only get in its way (and in the way of
++// the host app's own handlers, since the game runs inside the launcher process).
++// The symbols stay because callers elsewhere are not platform-gated.
++#include <cstdint>
++#include <cstdio>
++
++namespace bh {
++void install_crash_handler() {}
++void set_rdram_for_fault_handling(uint8_t*) {}
++void watch_for_hang(const char*, int) {}
++void watch_done() {}
++}  // namespace bh
++
++extern "C" void bh_report_lookup_miss(unsigned int addr, void* return_address) {
++    std::fprintf(stderr, "[bh] function lookup failed at 0x%08X (caller %p)\n",
++                 addr, return_address);
++    std::fflush(stderr);
++}
++
+ #else
+ 
+ // Off Windows there is no dbghelp, and nothing here has an equivalent worth
+diff --git a/src/main.cpp b/src/main.cpp
+index a494ed3..b562f0b 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -59,6 +59,15 @@ namespace bh {
+ // A file called portable.txt in the working directory (the executable's
+ // directory, see main) keeps everything there instead.
+ std::filesystem::path settings_directory() {
++    // APP_FOLDER_PATH (the RecompFrontend ports' variable) wins outright. Why:
++    // the port-launcher Android module's shim sets it to the launcher's per-game
++    // config dir before calling main(); without this, Android (no XDG, HOME =
++    // the same dir) would nest everything one level deeper under
++    // .local/share/body-harvest-recomp, where the launcher's settings/mods
++    // plumbing (mods.json, <config>/mods link) would never find it.
++    if (const char* app = std::getenv("APP_FOLDER_PATH"); app != nullptr && *app != '\0') {
++        return std::filesystem::path{ app };
++    }
+     if (std::filesystem::exists("portable.txt")) {
+         return std::filesystem::current_path();
+     }
+@@ -400,7 +409,15 @@ int main(int argc, char** argv) {
+     {
+         std::error_code ec;
+         g_original_cwd = std::filesystem::current_path(ec);
++#if defined(__ANDROID__)
++        // Android (port-launcher module): the game is a shared library inside
++        // the launcher's process, so /proc/self/exe is app_process in
++        // /system/bin. The shim has already chdir'd to the module's data dir,
++        // which holds assets/ -- keep it.
++        const std::filesystem::path exe_dir;
++#else
+         const std::filesystem::path exe_dir = bh::executable_directory(argv[0]);
++#endif
+         if (!exe_dir.empty()) {
+             std::filesystem::current_path(exe_dir, ec);
+             if (ec) {
+@@ -466,6 +483,25 @@ int main(int argc, char** argv) {
+ 
+     const std::string command = argv[1];
+ 
++    // Direct start from a launcher (port-launcher's shim passes
++    // `--rom <path> --skip-launcher [--game-mode <id>]`, the convention of the
++    // RecompFrontend ports): the dump goes straight to the game, exactly like
++    // the positional form below. --skip-launcher is implied by giving a dump
++    // (run() starts the game whenever it has one); --game-mode has no meaning
++    // here (no mod game modes), so both are accepted and ignored.
++    if (command == "--rom") {
++        if (argc < 3) {
++            std::fprintf(stderr, "error: --rom needs a path to a .z64 dump\n");
++            return 1;
++        }
++#if BH_WITH_RUNTIME && BH_WITH_RECOMPILED
++        return run(argc, argv, argv[2]);
++#else
++        std::fprintf(stderr, "This build cannot run the game.\n");
++        return 1;
++#endif
++    }
++
+     if (command == "--version" || command == "-v") {
+         print_version();
+         return 0;
+-- 
+2.43.0
+

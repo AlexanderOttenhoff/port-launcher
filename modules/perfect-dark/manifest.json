@@ -1,0 +1,42 @@
+{
+  "spec": 0,
+  "id": "perfect-dark",
+  "name": "Perfect Dark (PC port)",
+  "version": "port-dev+plm.10",
+  "family": "decomp-port",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/fgsfdsfgs/perfect_dark", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "MIT",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.perfect-dark.us-1.1",
+      "title": "Perfect Dark", "game_code": "NPDE",
+      "region": "US", "revision": "1.1",
+      "sha1": ["af8788ac4d1a57260eae9c53ffe851fcf2a3319b"]
+    }
+  ],
+  "capabilities": { "mods": [], "texture_packs": [], "achievements": false },
+  "mods": {
+    "builtin": [
+      {
+        "id": "steady-aim",
+        "name": "Steady aim",
+        "setting": "Plm.SteadyAim",
+        "default": true,
+        "description": "While aiming, the stick turns the view and the crosshair stays centred, turning doesn't swing the crosshair, and standing still doesn't sway the view."
+      },
+      {
+        "id": "wheel-pause",
+        "name": "Pause on weapon wheel",
+        "setting": "Plm.WheelPause",
+        "default": false,
+        "description": "The game pauses while the weapon wheel is open (single player only). Off keeps it running, like the original."
+      }
+    ]
+  }
+}

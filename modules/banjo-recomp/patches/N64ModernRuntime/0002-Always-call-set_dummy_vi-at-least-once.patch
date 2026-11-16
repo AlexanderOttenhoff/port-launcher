@@ -1,0 +1,28 @@
+From 3857355f9ef466494b193c973b3ea62b3c0b3560 Mon Sep 17 00:00:00 2001
+From: Ethan Lafrenais <ethan.lafrenais@gmail.com>
+Date: Tue, 21 Apr 2026 23:43:53 -0400
+Subject: [PATCH 2/2] Always call set_dummy_vi at least once
+
+Hack to support skipping the recomp launcher and booting the runtime immediately
+
+(cherry picked from commit 5181d829888b15ae9131161ff67b51e6b3ac38f8)
+---
+ ultramodern/src/events.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+index 090cc42..228584c 100644
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -186,6 +186,8 @@ void vi_thread_func() {
+     ultramodern::set_native_thread_priority(ultramodern::ThreadPriority::Critical);
+     using namespace std::chrono_literals;
+ 
++    set_dummy_vi(false);
++
+     int remaining_retraces = 1;
+ 
+     while (!exited) {
+-- 
+2.43.0
+

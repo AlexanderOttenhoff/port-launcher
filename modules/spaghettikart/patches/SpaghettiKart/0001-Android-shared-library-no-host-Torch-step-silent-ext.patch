@@ -1,0 +1,91 @@
+From 9fa513d8a940c895830a092747530397d083d013 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 12:04:40 +1100
+Subject: [PATCH 1/4] Android: shared library, no host Torch step; silent
+ extraction when a launcher supplies the ROM (PLM_ROM)
+
+---
+ CMakeLists.txt                 | 10 ++++++++--
+ src/engine/mods/ModManager.cpp |  9 +++++++++
+ src/port/Engine.cpp            |  1 +
+ src/port/GameExtractor.cpp     |  4 ++++
+ 4 files changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9eac9a299..22453978e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -126,7 +126,12 @@ if(SPAGHETTIKART_IOS)
+ 
+ endif()
+ 
+-add_executable(${PROJECT_NAME} ${ALL_FILES})
++if(ANDROID)
++  # The game is a shared library that SDL's Java activity (here: the port launcher's host) loads.
++  add_library(${PROJECT_NAME} SHARED ${ALL_FILES})
++else()
++  add_executable(${PROJECT_NAME} ${ALL_FILES})
++endif()
+ target_include_directories(
+   ${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                           ${CMAKE_CURRENT_SOURCE_DIR}/include
+@@ -219,7 +224,8 @@ add_custom_command(
+   VERBATIM)
+ endif()
+ 
+-if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
++# Host-side Torch (packs spaghetti.o2r at build time); Android cross builds pack it with a host Torch separately.
++if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT ANDROID)
+   include(ExternalProject)
+   # Torch's pinned spdlog bundles an fmt that trips a consteval error under
+   # newer AppleClang (Xcode 16+): "call to consteval function
+diff --git a/src/engine/mods/ModManager.cpp b/src/engine/mods/ModManager.cpp
+index ff2a2b3ef..0afc270c5 100644
+--- a/src/engine/mods/ModManager.cpp
++++ b/src/engine/mods/ModManager.cpp
+@@ -58,6 +58,15 @@ void UnloadMods() {
+ // at this point, which segfaults — a crash report on what should be a clean quit (e.g. when
+ // the user declines the first-run "Generate one now?" prompt).
+ void GenerateAssetsMods() {
++    // A launcher that supplies the ROM (PLM_ROM, port-launcher) gets a silent first-start extraction: no prompts in
++    // direct boot (SDL's Android message boxes would block the game thread until tapped).
++    if (const char* rom = std::getenv("PLM_ROM"); rom != nullptr && *rom) {
++        if (!GameEngine::GenAssetFile()) {
++            SPDLOG_ERROR("PLM_ROM: extraction from {} failed", rom);
++            _Exit(1);
++        }
++        return;
++    }
+     if (GameEngine::ShowYesNoBox("No O2R Files", "No O2R files found. Generate one now?") == IDYES) {
+         if (!GameEngine::GenAssetFile()) {
+             GameEngine::ShowMessage("Error", "An error occured, no O2R file was generated.\n\nExiting...");
+diff --git a/src/port/Engine.cpp b/src/port/Engine.cpp
+index 23036adcb..f65af25fd 100644
+--- a/src/port/Engine.cpp
++++ b/src/port/Engine.cpp
+@@ -287,6 +287,7 @@ bool GameEngine::GenAssetFile() {
+         _Exit(1);
+     }
+ 
++    if (const char* rom = std::getenv("PLM_ROM"); rom == nullptr || !*rom) // port-launcher: no prompt in direct boot
+     ShowMessage(("Found " + game.value()).c_str(),
+                 "The extraction process will now begin.\n\nThis may take a few minutes.", SDL_MESSAGEBOX_INFORMATION);
+ 
+diff --git a/src/port/GameExtractor.cpp b/src/port/GameExtractor.cpp
+index 4e8b4dfae..cde5ba1cc 100644
+--- a/src/port/GameExtractor.cpp
++++ b/src/port/GameExtractor.cpp
+@@ -32,6 +32,10 @@ std::unordered_map<std::string, std::string> mGameList = {
+ 
+ bool GameExtractor::SelectGameFromUI() {
+     std::vector<std::string> roms;
++    // A launcher may hand over the ROM (port-launcher sets PLM_ROM, a big-endian .z64); it is tried first.
++    if (const char* launcherRom = std::getenv("PLM_ROM"); launcherRom != nullptr && *launcherRom) {
++        roms.push_back(launcherRom);
++    }
+     GetRoms(roms);
+ 
+     bool foundGame = false;
+-- 
+2.43.0
+

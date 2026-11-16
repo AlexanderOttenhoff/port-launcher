@@ -1,0 +1,28 @@
+From 9f8bfc104b9af75eb646bad2dba267bcfcb13742 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 14:50:22 +1100
+Subject: [PATCH] Android: free look not inverted vertically by default
+
+---
+ src/port/Enhancements/Camera/FreeLookCamera.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/port/Enhancements/Camera/FreeLookCamera.cpp b/src/port/Enhancements/Camera/FreeLookCamera.cpp
+index 234c3e78..4a10699b 100644
+--- a/src/port/Enhancements/Camera/FreeLookCamera.cpp
++++ b/src/port/Enhancements/Camera/FreeLookCamera.cpp
+@@ -147,6 +147,11 @@ void UpdateOrbit() {
+     bool invertY = CVarGetInteger(CVAR_FREELOOK_INVERT_Y, 0) != 0;
+ 
+     D_8037DB70 = mlNormalizeAngle(D_8037DB70 + (invertX ? -stick[0] : stick[0]) * kYawSpeed * yawSens * dt);
++#ifdef __ANDROID__
++    // [port launcher] Free look came out inverted vertically with Invert Y off (seen on a Retroid Pocket 6), so the
++    // option's meaning is reversed there: off = push up to look up, the launcher's default for every game.
++    invertY = !invertY;
++#endif
+     sPitch = clampf(sPitch + (invertY ? stick[1] : -stick[1]) * kPitchSpeed * pitchSens * dt, kMinPitch, kMaxPitch);
+ 
+     float focus[3];
+-- 
+2.43.0
+

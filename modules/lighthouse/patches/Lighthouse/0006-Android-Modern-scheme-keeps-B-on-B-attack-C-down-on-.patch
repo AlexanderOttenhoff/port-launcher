@@ -1,0 +1,41 @@
+From 4729b0c138e21bf867bfaaf73d84e52a4823ca22 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 14:49:41 +1100
+Subject: [PATCH] Android: Modern scheme keeps B on B (attack), C-down on X
+
+---
+ src/port/Controller/ControlSchemes.cpp | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/port/Controller/ControlSchemes.cpp b/src/port/Controller/ControlSchemes.cpp
+index b96f0787..16e7b1d8 100644
+--- a/src/port/Controller/ControlSchemes.cpp
++++ b/src/port/Controller/ControlSchemes.cpp
+@@ -166,7 +166,12 @@ void ControlSchemes_Apply(int scheme) {
+             ClearButtonSDL(controller, BTN_CDOWN);
+             ClearButtonSDL(controller, BTN_CUP);
+             BindButton(controller, BTN_CUP, SDL_CONTROLLER_BUTTON_Y);
++#ifdef __ANDROID__
++            // [port launcher] B stays B (attack) by label; C-down (zoom / eggs) takes X instead.
++            BindButton(controller, BTN_CDOWN, SDL_CONTROLLER_BUTTON_X);
++#else
+             BindButton(controller, BTN_CDOWN, SDL_CONTROLLER_BUTTON_B);
++#endif
+             BindAxisToButton(controller, BTN_CLEFT, SDL_CONTROLLER_AXIS_RIGHTX, -1);
+             BindAxisToButton(controller, BTN_CRIGHT, SDL_CONTROLLER_AXIS_RIGHTX, 1);
+ 
+@@ -181,7 +186,11 @@ void ControlSchemes_Apply(int scheme) {
+ 
+             // Attacks
+             ClearButtonSDL(controller, BTN_B);
++#ifdef __ANDROID__
++            BindButton(controller, BTN_B, SDL_CONTROLLER_BUTTON_B);
++#else
+             BindButton(controller, BTN_B, SDL_CONTROLLER_BUTTON_X);
++#endif
+ 
+             // L remains L to preserve skip dialog combo
+             ClearButtonSDL(controller, BTN_L);
+-- 
+2.43.0
+

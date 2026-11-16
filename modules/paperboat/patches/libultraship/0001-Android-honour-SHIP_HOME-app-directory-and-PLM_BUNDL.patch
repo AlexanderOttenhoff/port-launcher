@@ -1,0 +1,39 @@
+From 38029d21b49db3b04436180248d1f1aa984c86fd Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 09:21:48 +1100
+Subject: [PATCH 1/2] Android: honour SHIP_HOME (app directory) and PLM_BUNDLE
+ (bundle directory)
+
+---
+ src/ship/Context.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/ship/Context.cpp b/src/ship/Context.cpp
+index b9d86caa..c17d75c2 100644
+--- a/src/ship/Context.cpp
++++ b/src/ship/Context.cpp
+@@ -475,6 +475,10 @@ std::string Context::GetShortName() const {
+ 
+ std::string Context::GetAppBundlePath() {
+ #if defined(__ANDROID__)
++    // A launcher may choose the read-only bundle directory (port-launcher: the module's data dir).
++    if (const char* bundle = std::getenv("PLM_BUNDLE"); bundle != nullptr && *bundle) {
++        return bundle;
++    }
+     const char* externaldir = SDL_AndroidGetExternalStoragePath();
+     if (externaldir != NULL) {
+         return externaldir;
+@@ -541,6 +545,10 @@ std::string Context::GetAppBundlePath() {
+ 
+ std::string Context::GetAppDirectoryPath(const std::string& appName) {
+ #if defined(__ANDROID__)
++    // A launcher may choose the directory (port-launcher points SHIP_HOME at the module's config dir).
++    if (const char* shipHome = std::getenv("SHIP_HOME"); shipHome != nullptr && *shipHome) {
++        return shipHome;
++    }
+     const char* externaldir = SDL_AndroidGetExternalStoragePath();
+     if (externaldir != NULL) {
+         return externaldir;
+-- 
+2.43.0
+

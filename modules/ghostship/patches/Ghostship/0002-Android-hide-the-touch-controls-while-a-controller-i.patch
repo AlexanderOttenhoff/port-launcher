@@ -1,0 +1,39 @@
+From d6df3db7b08f772fd9c7d5492c646db2b076debd Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 15:34:17 +1100
+Subject: [PATCH] Android: hide the touch controls while a controller is
+ connected
+
+---
+ libultraship                  | 2 +-
+ src/port/ui/TouchControls.cpp | 7 +++++++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/libultraship b/libultraship
+index 37daaa66..9c2789ea 160000
+--- a/libultraship
++++ b/libultraship
+@@ -1 +1 @@
+-Subproject commit 37daaa66e55c9f66a95727b6717f8c5af952c5fa
++Subproject commit 9c2789ea7fbd639b6b5af4750761d1c16565f776
+diff --git a/src/port/ui/TouchControls.cpp b/src/port/ui/TouchControls.cpp
+index 562a5b4f..1733f90e 100644
+--- a/src/port/ui/TouchControls.cpp
++++ b/src/port/ui/TouchControls.cpp
+@@ -155,6 +155,13 @@ void RegisterCVars() {
+ 
+ bool Enabled() {
+     RegisterCVars();
++#ifdef __ANDROID__
++    // Port launcher: handhelds have physical controls; the overlay is for touch-only devices, so it hides while any
++    // controller (a handheld's built-in one included) is connected.
++    if (SDL_NumJoysticks() > 0) {
++        return false;
++    }
++#endif
+     return CVarGetInteger(CVAR_TOUCH("Enabled"), TOUCH_CONTROLS_DEFAULT) != 0;
+ }
+ 
+-- 
+2.43.0
+

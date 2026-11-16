@@ -1,0 +1,506 @@
+From f7841f0fa52ca5e10904eb5c5136d64dd2c75779 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 13:16:28 +1100
+Subject: [PATCH] Android: PIC shared library with a shifted N64 window, NDK
+ Clang and GLES
+
+- portaddr.h/CMake: PORT_ADDR_BASE 0x4000000000 on Android (like arm64 macOS);
+  port_addr.c reserves the 4 GiB window with mmap, romdata.c maps the cart
+  inside it, sysImageBase() uses dladdr for the image-relative encoding.
+- Absolute ROM/DRAM symbols: the macOS pipeline with gen_macho_syms.py --elf
+  (ELF names, .hidden, so the PIC library resolves them at link time).
+- #pragma weak aliases become same-file alias attributes (strip_weak_pragmas.py
+  --alias); 64-bit animation table also on Android arm64.
+- Clang: -fms-extensions for the inherits pattern; port/shim and include/ are
+  searched after libc++ for C++; no FORTIFY; bionic ntohl; memfd via syscall
+  below API 30; static SDL2, GLESv3/EGL; shared library instead of executable.
+---
+ CMakeLists.txt                | 102 ++++++++++++++++++++++++++++++++--
+ assets/animationtable_data.h  |   2 +-
+ port/include/pc_protos.h      |   2 +-
+ port/include/portaddr.h       |   5 ++
+ port/src/dram.c               |   7 +++
+ port/src/port_addr.c          |  21 ++++++-
+ port/src/romdata.c            |   2 +-
+ port/src/system.c             |  10 ++++
+ port/src/video.c              |   3 +
+ scripts/gen_macho_syms.py     |  14 ++++-
+ scripts/strip_weak_pragmas.py |  26 +++++++--
+ 11 files changed, 178 insertions(+), 16 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4e07bbd8..5daac07c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -150,6 +150,9 @@ message(STATUS "Target arch: ${TARGET_ARCH} (64bit=${TARGET_IS_64BIT})")
+ # cart pairing (romdata.c CART_HOST vs romassets_*.s values) agrees.
+ if(APPLE AND TARGET_ARCH MATCHES "^aarch64$")
+   set(PORT_ADDR_BASE 0x100000000000 CACHE STRING "Host base of the N64 address window (arm64 macOS)")
++elseif(ANDROID)
++  # Must match portaddr.h: a PIC library can't rely on low fixed addresses (256 GiB fits 39-bit VA kernels).
++  set(PORT_ADDR_BASE 0x4000000000 CACHE STRING "Host base of the N64 address window (Android)")
+ else()
+   set(PORT_ADDR_BASE 0x0 CACHE STRING "Host base of the N64 address window")
+ endif()
+@@ -235,7 +238,11 @@ if(APPLE)
+   endif()
+   set(PORT_HOST_STRING_H "${_PORT_MACOS_SDK}/usr/include/string.h")
+ else()
++  if(ANDROID)
++    set(PORT_HOST_STRING_H "${CMAKE_SYSROOT}/usr/include/string.h")
++  else()
+   get_filename_component(PORT_HOST_STRING_H "${_PORT_GCC_DIR}/../include/string.h" ABSOLUTE)
++  endif()
+ endif()
+ configure_file(
+   "${CMAKE_SOURCE_DIR}/port/include/hoststring.h.in"
+@@ -248,7 +255,11 @@ configure_file(
+ if(APPLE)
+   set(PORT_HOST_SCHED_H "${_PORT_MACOS_SDK}/usr/include/sched.h")
+ else()
++  if(ANDROID)
++    set(PORT_HOST_SCHED_H "${CMAKE_SYSROOT}/usr/include/sched.h")
++  else()
+   get_filename_component(PORT_HOST_SCHED_H "${_PORT_GCC_DIR}/../include/sched.h" ABSOLUTE)
++  endif()
+ endif()
+ configure_file(
+   "${CMAKE_SOURCE_DIR}/port/include/hostsched.h.in"
+@@ -262,7 +273,11 @@ configure_file(
+ if(APPLE)
+   set(PORT_HOST_STDLIB_H "${_PORT_MACOS_SDK}/usr/include/stdlib.h")
+ else()
++  if(ANDROID)
++    set(PORT_HOST_STDLIB_H "${CMAKE_SYSROOT}/usr/include/stdlib.h")
++  else()
+   get_filename_component(PORT_HOST_STDLIB_H "${_PORT_GCC_DIR}/../include/stdlib.h" ABSOLUTE)
++  endif()
+ endif()
+ configure_file(
+   "${CMAKE_SOURCE_DIR}/port/include/hoststdlib.h.in"
+@@ -374,6 +389,10 @@ add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-function>)
+ # the Plan 9 extensions explicitly there (superset of -fms-extensions: also the
+ # automatic base-pointer conversion the idiom relies on). C only — the decomp
+ # is C; fast3d C++ does not use `inherits`.
++if(ANDROID)
++  # The NDK only has Clang: -fms-extensions embeds `inherits Base;` members like GCC's plan9 extensions.
++  add_compile_options($<$<COMPILE_LANGUAGE:C>:-fms-extensions> $<$<COMPILE_LANGUAGE:C>:-Wno-microsoft-anon-tag>)
++endif()
+ if(NOT MINGW)
+   # GCC-only flags: the macOS default compiler is Apple clang (via the
+   # /usr/bin/gcc c99 shim), which rejects both of these.
+@@ -399,7 +418,7 @@ endif()
+ # base at startup.
+ if(MINGW)
+   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--disable-dynamicbase")
+-elseif(UNIX AND NOT APPLE)
++elseif(UNIX AND NOT APPLE AND NOT ANDROID)
+   # Linux equivalent of the ASLR-off requirement above: dram_syms.s defines
+   # absolute symbols at 0x70000000 referenced through pointer-typed externs. A
+   # PIE build (GCC's default on modern distros) emits GOT/relative relocations
+@@ -449,7 +468,7 @@ endif()
+ # port/shim first: PC-only shadow headers (bondtypes.h, bondconstants.h,
+ # PR/gbi.h) that fix N64-compiler assumptions without touching src/ or
+ # include/. Inert in the N64 build (its Makefile never sees port/shim).
+-include_directories(
++set(GE_INCLUDE_DIRS
+   "${CMAKE_SOURCE_DIR}/port/shim"
+   "${CMAKE_SOURCE_DIR}"
+   "${CMAKE_SOURCE_DIR}/include"
+@@ -462,13 +481,32 @@ include_directories(
+   "${CMAKE_SOURCE_DIR}/port/include"
+   "${CMAKE_BINARY_DIR}/port/include"
+ )
++if(ANDROID)
++  # port/shim and the decomp's include/ hold headers named like libc's (stddef.h,
++  # string.h, math.h, ...). libc++ (Clang, the only NDK compiler) needs its own
++  # wrappers to win, so C++ searches these dirs only after the system headers.
++  foreach(_dir IN LISTS GE_INCLUDE_DIRS)
++    add_compile_options("$<$<COMPILE_LANGUAGE:C,ASM>:-I${_dir}>" "$<$<COMPILE_LANGUAGE:CXX>:-idirafter${_dir}>")
++  endforeach()
++  # Bionic's FORTIFY makes memcpy/strlen/... overloadable; the port redeclares them (pc_protos.h).
++  add_compile_options(-U_FORTIFY_SOURCE)
++else()
++include_directories(${GE_INCLUDE_DIRS})
++endif()
+ 
+ # ----------------------------------------------------------------------------
+ # Dependencies: SDL2, zlib, OpenGL
+ # ----------------------------------------------------------------------------
+ set(LIBS "")
+ 
++if(ANDROID)
++  # a statically linked SDL2 built for the app (SDL2_DIR points at its CMake config)
++  find_package(SDL2 REQUIRED CONFIG)
++  get_target_property(SDL2_INCLUDE_DIR SDL2::SDL2-static INTERFACE_INCLUDE_DIRECTORIES)
++  set(SDL2_LIBRARY SDL2::SDL2-static)
++else()
+ find_package(SDL2 REQUIRED)
++endif()
+ include_directories(SYSTEM "${SDL2_INCLUDE_DIR}")
+ list(APPEND LIBS "${SDL2_LIBRARY}")
+ 
+@@ -498,6 +536,8 @@ configure_file(
+ if(NOT GL_LIBRARY)
+   if(WIN32)
+     set(GL_LIBRARY opengl32)
++  elseif(ANDROID)
++    set(GL_LIBRARY GLESv3 EGL)
+   elseif(APPLE)
+     set(GL_LIBRARY "-framework OpenGL")
+   else()
+@@ -512,6 +552,8 @@ if(NOT EXTRA_LIBRARIES)
+     set(EXTRA_LIBRARIES dbghelp -static-libstdc++ pthread)
+   elseif(WIN32)
+     set(EXTRA_LIBRARIES dbghelp -static-libstdc++)
++  elseif(ANDROID)
++    set(EXTRA_LIBRARIES android log m dl)
+   elseif(APPLE)
+     set(EXTRA_LIBRARIES stdc++ m pthread)
+   else()
+@@ -525,6 +567,10 @@ list(APPEND LIBS "${EXTRA_LIBRARIES}")
+ # ----------------------------------------------------------------------------
+ # Port layer (shims + software RSP).
+ file(GLOB_RECURSE SRC_PORT      "${CMAKE_SOURCE_DIR}/port/src/*.c")
++if(ANDROID)
++  # bionic's <sys/endian.h> provides ntohs/ntohl (as macros), see pc_protos.h
++  list(REMOVE_ITEM SRC_PORT "${CMAKE_SOURCE_DIR}/port/src/pc_netorder.c")
++endif()
+ file(GLOB_RECURSE SRC_PORT_CXX  "${CMAKE_SOURCE_DIR}/port/src/*.cpp")
+ file(GLOB_RECURSE SRC_FAST3D    "${CMAKE_SOURCE_DIR}/port/fast3d/*.cpp"
+                                "${CMAKE_SOURCE_DIR}/port/fast3d/glad/*.c")
+@@ -614,6 +660,36 @@ if(APPLE)
+     VERBATIM)
+   set_source_files_properties(${SRC_ROMASSETS} ${SRC_DRAM_SYMS_EXPANDED} ${SRC_DRAM_SYMS}
+     PROPERTIES GENERATED TRUE)
++elseif(ANDROID)
++  # Android shifts the N64 window like arm64 macOS (PORT_ADDR_BASE, portaddr.h): the same pipeline, ELF spelling.
++  # gen_macho_syms.py --elf keeps the names and marks every symbol .hidden, so the PIC library resolves these
++  # absolute addresses at link time (no load-time rebasing).
++  find_package(Python3 REQUIRED COMPONENTS Interpreter)
++  file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/port/src")
++  set(SRC_ROMASSETS "${CMAKE_BINARY_DIR}/port/src/romassets_${ASSET_REGION}_elf.s")
++  set(SRC_DRAM_SYMS_EXPANDED "${CMAKE_BINARY_DIR}/port/src/dram_syms_expanded.s")
++  set(SRC_DRAM_SYMS "${CMAKE_BINARY_DIR}/port/src/dram_syms_elf.s")
++  add_custom_command(
++    OUTPUT "${SRC_ROMASSETS}"
++    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/gen_macho_syms.py"
++            --elf --base "${PORT_ADDR_BASE}" "${SRC_ROMASSETS_INPUT}" "${SRC_ROMASSETS}"
++    DEPENDS "${SRC_ROMASSETS_INPUT}" "${CMAKE_SOURCE_DIR}/scripts/gen_macho_syms.py"
++    VERBATIM)
++  add_custom_command(
++    OUTPUT "${SRC_DRAM_SYMS_EXPANDED}"
++    COMMAND "${CMAKE_C_COMPILER}" "--target=${CMAKE_C_COMPILER_TARGET}" "-E" "-P" "-x" "assembler-with-cpp"
++            "-I${CMAKE_SOURCE_DIR}/port/include"
++            "${SRC_DRAM_SYMS_INPUT}" "-o" "${SRC_DRAM_SYMS_EXPANDED}"
++    DEPENDS "${SRC_DRAM_SYMS_INPUT}" "${CMAKE_SOURCE_DIR}/port/include/portaddr.h"
++    VERBATIM)
++  add_custom_command(
++    OUTPUT "${SRC_DRAM_SYMS}"
++    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/gen_macho_syms.py"
++            --elf "${SRC_DRAM_SYMS_EXPANDED}" "${SRC_DRAM_SYMS}"
++    DEPENDS "${SRC_DRAM_SYMS_EXPANDED}" "${CMAKE_SOURCE_DIR}/scripts/gen_macho_syms.py"
++    VERBATIM)
++  set_source_files_properties(${SRC_ROMASSETS} ${SRC_DRAM_SYMS_EXPANDED} ${SRC_DRAM_SYMS}
++    PROPERTIES GENERATED TRUE)
+ else()
+   set(SRC_ROMASSETS "${SRC_ROMASSETS_INPUT}")
+   set(SRC_DRAM_SYMS "${SRC_DRAM_SYMS_INPUT}")
+@@ -652,7 +728,14 @@ file(GLOB SRC_GU "${CMAKE_SOURCE_DIR}/src/libultra/gu/*.c")
+ # `#pragma weak alias = target` directives. Compile generated copies with
+ # those directives removed, then provide their aliases in Mach-O assembly.
+ set(SRC_MACHO_ALIASES "")
+-if(APPLE)
++if(APPLE OR ANDROID)
++  # Android's Clang also rejects the decomp's `#pragma weak alias = target` on
++  # these externs ("reference is ambiguous"); there the pragmas become alias
++  # attributes in the same file (ELF can't alias across objects in assembly).
++  set(_WEAK_MODE "")
++  if(ANDROID)
++    set(_WEAK_MODE "--alias")
++  endif()
+   set(_MACHO_GENERATED_SOURCES "")
+   set(_MACHO_WEAK_INPUTS
+     "${CMAKE_SOURCE_DIR}/src/game/lv.c"
+@@ -667,7 +750,7 @@ if(APPLE)
+       OUTPUT "${_OUTPUT}"
+       COMMAND "${Python3_EXECUTABLE}"
+               "${CMAKE_SOURCE_DIR}/scripts/strip_weak_pragmas.py"
+-              "${_INPUT}" "${_OUTPUT}"
++              ${_WEAK_MODE} "${_INPUT}" "${_OUTPUT}"
+       DEPENDS "${_INPUT}" "${CMAKE_SOURCE_DIR}/scripts/strip_weak_pragmas.py"
+       VERBATIM)
+     list(APPEND SRC_MACHO_ALIASES "${_OUTPUT}")
+@@ -675,8 +758,10 @@ if(APPLE)
+     list(REMOVE_ITEM SRC_GAME "${_INPUT}")
+     list(REMOVE_ITEM SRC_GU "${_INPUT}")
+   endforeach()
+-  list(APPEND SRC_MACHO_ALIASES
+-    "${CMAKE_SOURCE_DIR}/port/src/macho_weak_aliases.s")
++  if(APPLE)
++    list(APPEND SRC_MACHO_ALIASES
++      "${CMAKE_SOURCE_DIR}/port/src/macho_weak_aliases.s")
++  endif()
+   set_source_files_properties(${_MACHO_GENERATED_SOURCES}
+     PROPERTIES GENERATED TRUE)
+ endif()
+@@ -806,7 +891,12 @@ set(SRC
+ # Target
+ # ----------------------------------------------------------------------------
+ set(BIN_NAME "ge007${BIN_REGION}.${TARGET_ARCH}")
++if(ANDROID)
++  # Android: the game is a shared library that the launcher's SDL activity loads
++  add_library(ge007 SHARED ${SRC})
++else()
+ add_executable(ge007 ${SRC})
++endif()
+ target_link_libraries(ge007 ${LIBS})
+ set_target_properties(ge007 PROPERTIES OUTPUT_NAME "${BIN_NAME}")
+ if(WIN32)
+diff --git a/assets/animationtable_data.h b/assets/animationtable_data.h
+index ec103bc7..18652de8 100644
+--- a/assets/animationtable_data.h
++++ b/assets/animationtable_data.h
+@@ -197,7 +197,7 @@
+ // These are compile time extern constants (so not "really" const), but used the same
+ // as the defines above, which is to index into ptr_animation_table.
+ 
+-#if defined(__x86_64__) || (defined(__aarch64__) && defined(__APPLE__))
++#if defined(__x86_64__) || (defined(__aarch64__) && (defined(__APPLE__) || defined(__ANDROID__)))
+ /* D34 (docs/dev/findings.md): on N64 this segment links at VMA 0
+  * (ge007.ld), so &ANIM_DATA_x is the record's offset within the
+  * animation_data segment and game code re-bases it with
+diff --git a/port/include/pc_protos.h b/port/include/pc_protos.h
+index 1e6320d6..d9c1b157 100644
+--- a/port/include/pc_protos.h
++++ b/port/include/pc_protos.h
+@@ -62,7 +62,7 @@ void assert();
+  * winsock has not already declared them, so TUs that include <windows.h>
+  * before <ultra64.h> don't get a dllimport redeclaration warning. Defined in
+  * port/src/pc_netorder.c (little-endian byte swap == CharArrayTo16/32). */
+-#if !defined(__WINSOCK_H) && !defined(_WINSOCK2_H)
++#if !defined(__WINSOCK_H) && !defined(_WINSOCK2_H) && !defined(__ANDROID__) /* bionic: <sys/endian.h> */
+ /* Match winsock's own signatures (u_short/u_long) so TUs that parse
+  * <windows.h> later redeclare compatibly; on LLP64 u_long is 64-bit and the
+  * high bits are unused for the 16/32-bit values game code passes. */
+diff --git a/port/include/portaddr.h b/port/include/portaddr.h
+index 95d223c8..9606ca9d 100644
+--- a/port/include/portaddr.h
++++ b/port/include/portaddr.h
+@@ -51,6 +51,11 @@
+ #ifndef PORT_ADDR_BASE
+ #if defined(__APPLE__) && defined(__aarch64__)
+ #define PORT_ADDR_BASE 0x100000000000ULL
++#elif defined(__ANDROID__)
++/* Android: the game is a PIC shared library loaded at a random high address and
++ * nothing can be mapped at fixed low addresses reliably, so the window is shifted
++ * like arm64 macOS. 256 GiB fits the 39-bit user address space of Android kernels. */
++#define PORT_ADDR_BASE 0x4000000000ULL
+ #else
+ #define PORT_ADDR_BASE 0
+ #endif
+diff --git a/port/src/dram.c b/port/src/dram.c
+index ce268eb6..0d4d9f56 100644
+--- a/port/src/dram.c
++++ b/port/src/dram.c
+@@ -59,6 +59,9 @@
+ #include <sys/mman.h>
+ #include <sys/stat.h>
+ #include <unistd.h>
++#if defined(__ANDROID__)
++#include <sys/syscall.h>
++#endif
+ #endif
+ 
+ #define DRAM_V1_BASE   PORT_DRAM_V1_BASE /* s32-safe "virtual" view (portaddr.h) */
+@@ -114,8 +117,12 @@ void *dramReserve(void)
+     int fd = shm_open(shmName, O_RDWR | O_CREAT, 0600);
+     if (fd >= 0)
+         shm_unlink(shmName);
++#else
++#if defined(__ANDROID__) && __ANDROID_API__ < 30
++    int fd = (int)syscall(__NR_memfd_create, "ge007_dram", 0);
+ #else
+     int fd = memfd_create("ge007_dram", 0);
++#endif
+ #endif
+     if (fd < 0) {
+         sysFatalError("dram: could not create shared backing store");
+diff --git a/port/src/port_addr.c b/port/src/port_addr.c
+index 0dee2dc2..0b1492e8 100644
+--- a/port/src/port_addr.c
++++ b/port/src/port_addr.c
+@@ -29,6 +29,9 @@
+ #endif
+ #endif
+ 
++#if !defined(__APPLE__) && !defined(_WIN32)
++#include <sys/mman.h>
++#endif
+ #if defined(PLATFORM_MACOS) && defined(PLATFORM_ARM)
+ #include <mach/mach.h>
+ #include <mach/mach_vm.h>
+@@ -174,7 +177,23 @@ void portAddrInit(void)
+      * and macOS (0x1_00xxxxxx + slide). */
+     g_portUseImageRel = (g_portImageBase >= (uintptr_t)PORT_ADDR_WINDOW) ? 1 : 0;
+ 
+-#if PORT_ADDR_BASE != 0
++#if PORT_ADDR_BASE != 0 && !defined(__APPLE__)
++    {
++        /* Reserve the shifted 4 GiB window up front (PROT_NONE); the DRAM views,
++         * cart image and thread stacks are then mapped inside it with MAP_FIXED. */
++        void *want = (void *)(uintptr_t)PORT_ADDR_BASE;
++        void *got = mmap(want, (size_t)PORT_ADDR_WINDOW, PROT_NONE,
++                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE
++#ifdef MAP_FIXED_NOREPLACE
++                         | MAP_FIXED_NOREPLACE
++#endif
++                         , -1, 0);
++        if (got != want) {
++            sysFatalError("portAddr: cannot reserve the 4 GiB N64 window at 0x%llx (got %p)",
++                          (unsigned long long)PORT_ADDR_BASE, got);
++        }
++    }
++#elif PORT_ADDR_BASE != 0
+     {
+         /* Non-clobbering: VM_FLAGS_FIXED without VM_FLAGS_OVERWRITE fails with
+          * KERN_NO_SPACE if the range is already in use, rather than silently
+diff --git a/port/src/romdata.c b/port/src/romdata.c
+index 2dda5241..def88207 100644
+--- a/port/src/romdata.c
++++ b/port/src/romdata.c
+@@ -428,7 +428,7 @@ int romdataInit(void)
+              * catches a relocated result. On macOS portAddrInit has already
+              * reserved the whole window, so MAP_FIXED lands inside our range. */
+             int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+-#ifndef PLATFORM_MACOS
++#if !defined(PLATFORM_MACOS) && PORT_ADDR_BASE == 0
+ #ifdef MAP_FIXED_NOREPLACE
+             flags |= MAP_FIXED_NOREPLACE;
+ #elif defined(PLATFORM_MACOS)
+diff --git a/port/src/system.c b/port/src/system.c
+index e28ec040..af8bce41 100644
+--- a/port/src/system.c
++++ b/port/src/system.c
+@@ -4,6 +4,9 @@
+  * Modelled on the PD port's port/src/system.c.
+  */
+ 
++#if defined(__ANDROID__)
++#include <dlfcn.h>
++#endif
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
+@@ -68,6 +71,13 @@ uintptr_t sysImageBase(void)
+      * so this is 0x1_0000_0000 + a per-run ASLR slide. M1's image-relative
+      * address rule uses this; get the slide from _dyld_get_image_vmaddr_slide. */
+     return (uintptr_t)_dyld_get_image_header(0);
++#elif defined(__ANDROID__)
++    /* The game is a shared library: its load address. */
++    Dl_info info;
++    if (dladdr((void *)&sysImageBase, &info) && info.dli_fbase) {
++        return (uintptr_t)info.dli_fbase;
++    }
++    return 0;
+ #else
+     /* TODO: parse /proc/self/maps for the first executable mapping. */
+     return 0;
+diff --git a/port/src/video.c b/port/src/video.c
+index 89bd255e..f81847d8 100644
+--- a/port/src/video.c
++++ b/port/src/video.c
+@@ -40,6 +40,9 @@ extern void exit(int status);
+ #include "../fast3d/gfx_sdl.h"
+ #include "../fast3d/gfx_opengl.h"
+ 
++/* Used before its definition below; Clang rejects the implicit declaration GCC accepted. */
++void portCrosshairTint(s32 *r, s32 *g, s32 *b);
++
+ /* GE's internal resolution before the game's first osViSetMode (which then
+  * sets the real CFB size): NTSC 640x480; PAL is taller, not shorter -- the EU
+  * game renders 320x269 at 50 Hz with no borders (TCRF), so 2x = 640x538 (D487). */
+diff --git a/scripts/gen_macho_syms.py b/scripts/gen_macho_syms.py
+index 30081ed8..90de7c4c 100644
+--- a/scripts/gen_macho_syms.py
++++ b/scripts/gen_macho_syms.py
+@@ -15,6 +15,12 @@ import sys
+ def main() -> int:
+     argv = sys.argv[1:]
+     base = 0
++    # --elf: keep the ELF spelling (no leading underscore) and mark every symbol
++    # .hidden, for PIC ELF builds with a shifted window (Android).
++    elf = False
++    if argv and argv[0] == "--elf":
++        elf = True
++        argv = argv[1:]
+     if argv and argv[0] == "--base":
+         if len(argv) < 2:
+             print(f"usage: {sys.argv[0]} [--base N] INPUT OUTPUT", file=sys.stderr)
+@@ -35,7 +41,11 @@ def main() -> int:
+ 
+         match = re.match(r"^(\s*)\.global\s+([A-Za-z_]\w*)\s*$", line)
+         if match:
+-            lines.append(f"{match.group(1)}.globl _{match.group(2)}")
++            if elf:
++                lines.append(f"{match.group(1)}.global {match.group(2)}")
++                lines.append(f"{match.group(1)}.hidden {match.group(2)}")
++            else:
++                lines.append(f"{match.group(1)}.globl _{match.group(2)}")
+             continue
+ 
+         match = re.match(
+@@ -56,7 +66,7 @@ def main() -> int:
+                     count=1,
+                 )
+             lines.append(
+-                f"{match.group(1)}.set _{match.group(2)}{expr}"
++                f"{match.group(1)}.set {'' if elf else '_'}{match.group(2)}{expr}"
+             )
+             continue
+ 
+diff --git a/scripts/strip_weak_pragmas.py b/scripts/strip_weak_pragmas.py
+index 335a1631..2ab7fc0a 100644
+--- a/scripts/strip_weak_pragmas.py
++++ b/scripts/strip_weak_pragmas.py
+@@ -7,15 +7,33 @@ import sys
+ 
+ 
+ def main() -> int:
+-    if len(sys.argv) != 3:
+-        print(f"usage: {sys.argv[0]} INPUT OUTPUT", file=sys.stderr)
++    argv = sys.argv[1:]
++    # --alias (ELF/Clang, Android): re-create each `#pragma weak A = B` as a
++    # hidden weak alias attribute at the end of the file, where B is defined.
++    alias = bool(argv) and argv[0] == "--alias"
++    if alias:
++        argv = argv[1:]
++    if len(argv) != 2:
++        print(f"usage: {sys.argv[0]} [--alias] INPUT OUTPUT", file=sys.stderr)
+         return 2
+ 
+-    source = pathlib.Path(sys.argv[1])
+-    output = pathlib.Path(sys.argv[2])
++    source = pathlib.Path(argv[0])
++    output = pathlib.Path(argv[1])
+     text = source.read_text(encoding="utf-8")
++    pairs = re.findall(r"^[ \t]*#pragma[ \t]+weak[ \t]+(\w+)[ \t]*=[ \t]*(\w+)",
++                       text, flags=re.MULTILINE)
+     text = re.sub(r"^[ \t]*#pragma[ \t]+weak[^\n]*\n", "", text,
+                   flags=re.MULTILINE)
++    if alias and pairs:
++        text += "\n/* #pragma weak aliases (strip_weak_pragmas.py --alias) */\n"
++        for name, target in pairs:
++            # The file may #define the alias name (sinf.c: fsin -> __sinf), and
++            # may already declare it with its own type (spectrum.c: u8 vs u8[]).
++            declared = re.search(r"extern[^;(]*\b%s\s*;" % re.escape(name), text)
++            kind = name if declared else target
++            text += (f"#undef {name}\n"
++                     f"extern __typeof__({kind}) {name} "
++                     f"__attribute__((weak, alias(\"{target}\"), visibility(\"hidden\")));\n")
+     output.parent.mkdir(parents=True, exist_ok=True)
+     output.write_text(text, encoding="utf-8")
+     return 0
+-- 
+2.43.0
+

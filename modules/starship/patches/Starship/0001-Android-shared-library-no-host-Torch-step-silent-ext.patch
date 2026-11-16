@@ -1,0 +1,88 @@
+From 7361b032002d57204c741b447f154775034e8ff0 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 08:32:48 +1100
+Subject: [PATCH] Android: shared library, no host Torch step; silent
+ extraction when a launcher supplies the ROM (PLM_ROM)
+
+---
+ CMakeLists.txt                       | 8 ++++++--
+ src/port/Engine.cpp                  | 9 +++++++++
+ src/port/extractor/GameExtractor.cpp | 7 ++++++-
+ 3 files changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2b872a44..36fb2745 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -114,7 +114,7 @@ add_compile_definitions(
+ )
+ 
+ # Find necessary libraries
+-if (UNIX AND NOT APPLE)
++if (UNIX AND NOT APPLE AND NOT ANDROID)
+ find_package(OpenGL REQUIRED)
+ endif()
+ 
+@@ -183,6 +183,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+         MACOSX_BUNDLE_INFO_PLIST ${IOS_DIR}/plist.in
+         RESOURCE "${IMAGE_FILES};${STORYBOARD_FILE};${ICON_FILES}"
+     )
++elseif(ANDROID)
++    # The game is a shared library that SDL's Java activity loads.
++    add_library(${PROJECT_NAME} SHARED ${ALL_FILES})
+ else()
+     add_executable(${PROJECT_NAME} ${ALL_FILES})
+ endif()
+@@ -606,7 +609,8 @@ add_custom_command(
+ 	COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets/" "$<TARGET_FILE_DIR:Starship>/assets/"
+ )
+ 
+-if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch")
++# Host-side Torch (packs starship.o2r at build time); Android cross builds pack it with a host Torch separately.
++if(NOT CMAKE_SYSTEM_NAME STREQUAL "NintendoSwitch" AND NOT ANDROID)
+ include(ExternalProject)
+ ExternalProject_Add(TorchExternal
+ 	PREFIX TorchExternal
+diff --git a/src/port/Engine.cpp b/src/port/Engine.cpp
+index bc0ccb1f..84171ec9 100644
+--- a/src/port/Engine.cpp
++++ b/src/port/Engine.cpp
+@@ -79,8 +79,17 @@ GameEngine::GameEngine() {
+     AllocConsole();
+ #endif
+ 
++    // A launcher that supplies the ROM (PLM_ROM) gets a silent first-start extraction: no prompts in direct boot.
++    const char* launcher_rom = std::getenv("PLM_ROM");
+     if (std::filesystem::exists(main_path)) {
+         archiveFiles.push_back(main_path);
++    } else if (launcher_rom != nullptr && *launcher_rom) {
++        auto extractor = new GameExtractor();
++        if (!extractor->SelectGameFromUI() || !extractor->ValidateChecksum().has_value() || !extractor->GenerateOTR()) {
++            ShowMessage("Error", "An error occured, no O2R file was generated.\n\nExiting...");
++            exit(1);
++        }
++        archiveFiles.push_back(main_path);
+     } else {
+         if (ShowYesNoBox("Starship - Asset Extraction", "Please provide a Starfox 64 ROM.\n\nSupported Versions:\nUS 1.0\nUS 1.1\n\nAssets will be extracted into an O2R file.") == IDYES) {
+             if(!GenAssetFile()){
+diff --git a/src/port/extractor/GameExtractor.cpp b/src/port/extractor/GameExtractor.cpp
+index 9be7f4b7..1ce7f690 100644
+--- a/src/port/extractor/GameExtractor.cpp
++++ b/src/port/extractor/GameExtractor.cpp
+@@ -33,7 +33,12 @@ bool GameExtractor::SelectGameFromUI() {
+ 
+     this->mGamePath = selection[0];
+ #else
+-    this->mGamePath = Ship::Context::GetPathRelativeToAppDirectory("baserom.us.rev1.z64");
++    // A launcher may hand over the ROM (port-launcher sets PLM_ROM); otherwise a fixed name in the app directory.
++    if (const char* rom = std::getenv("PLM_ROM"); rom != nullptr && *rom) {
++        this->mGamePath = rom;
++    } else {
++        this->mGamePath = Ship::Context::GetPathRelativeToAppDirectory("baserom.us.rev1.z64");
++    }
+ #endif
+ 
+     std::ifstream file(this->mGamePath, std::ios::binary);
+-- 
+2.43.0
+

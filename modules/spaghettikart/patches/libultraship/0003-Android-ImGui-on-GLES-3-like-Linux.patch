@@ -1,0 +1,25 @@
+From 2c25ad5431fed76a395a0b53ebd7efaef073f64b Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 12:04:08 +1100
+Subject: [PATCH 3/3] Android: ImGui on GLES 3 like Linux
+
+---
+ cmake/dependencies/android.cmake | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/cmake/dependencies/android.cmake b/cmake/dependencies/android.cmake
+index 36666a0f..c2e269c4 100644
+--- a/cmake/dependencies/android.cmake
++++ b/cmake/dependencies/android.cmake
+@@ -71,3 +71,8 @@ if (NOT ${libzip_FOUND})
+ endif()
+ 
+ target_link_libraries(ImGui PUBLIC SDL2::SDL2)
++# As on Linux: ImGui's OpenGL backend in its ES 3 flavour when the game renders with GLES.
++if (USE_OPENGLES)
++    target_link_libraries(ImGui PUBLIC GLESv3)
++    add_compile_definitions(IMGUI_IMPL_OPENGL_ES3)
++endif()
+-- 
+2.43.0
+

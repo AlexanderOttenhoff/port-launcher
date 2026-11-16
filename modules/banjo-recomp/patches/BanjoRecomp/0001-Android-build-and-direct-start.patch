@@ -1,0 +1,300 @@
+From a74de2d31b1ac98e6a237cd8f8f4467da3597eb6 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 12:53:03 +1100
+Subject: [PATCH 1/5] Android build and direct start
+
+- CMake: the game is a shared library on Android (SDL's activity loads it),
+  links SDL2/FreeType/android/log there, gets a stub nfd target, and runs a
+  host file_to_c (RT64_HOST_FILE_TO_C) when cross-compiling.
+- main: --rom <path> selects and validates a ROM without the file picker;
+  --skip-launcher starts the game directly when a valid ROM is stored.
+---
+ CMakeLists.txt                   |  31 +++++--
+ src/android/nfd_android_stub.cpp | 147 +++++++++++++++++++++++++++++++
+ src/main/main.cpp                |  25 ++++++
+ 3 files changed, 198 insertions(+), 5 deletions(-)
+ create mode 100644 src/android/nfd_android_stub.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index f868b10..9dcce60 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -52,6 +52,12 @@ if (RECOMP_FLATPAK)
+     add_compile_definitions(RECOMP_FLATPAK)
+ endif()
+ 
++# Android has no native file dialogs: give RT64 (and RecompFrontend) a stub nfd target.
++if (ANDROID AND NOT TARGET nfd)
++    add_library(nfd STATIC ${CMAKE_SOURCE_DIR}/src/android/nfd_android_stub.cpp)
++    target_include_directories(nfd PUBLIC ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib/nativefiledialog-extended/src/include)
++endif()
++
+ add_subdirectory(${CMAKE_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
+ 
+ set(BUILD_SHARED_LIBS OFF)
+@@ -125,7 +131,7 @@ add_custom_target(PatchesBin
+ 
+ # Generate patches_bin.c from patches.bin
+ add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c
+-    COMMAND file_to_c ${CMAKE_SOURCE_DIR}/patches/patches.bin bk_patches_bin ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.h
++    COMMAND ${RT64_HOST_FILE_TO_C} ${CMAKE_SOURCE_DIR}/patches/patches.bin bk_patches_bin ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.h
+     DEPENDS ${CMAKE_SOURCE_DIR}/patches/patches.bin
+ )
+ 
+@@ -141,8 +147,13 @@ add_custom_command(OUTPUT
+                    DEPENDS ${CMAKE_SOURCE_DIR}/patches/patches.elf
+ )
+ 
+-# Main executable
+-add_executable(BanjoRecompiled)
++# Main executable. On Android the game is a shared library that SDL's Java activity loads.
++if (ANDROID)
++    add_library(BanjoRecompiled SHARED)
++    set_target_properties(BanjoRecompiled PROPERTIES OUTPUT_NAME main)
++else()
++    add_executable(BanjoRecompiled)
++endif()
+ 
+ set (SOURCES
+     ${CMAKE_SOURCE_DIR}/src/main/launcher_animation.cpp
+@@ -181,7 +192,7 @@ target_include_directories(BanjoRecompiled PRIVATE
+ 
+ # Generate icon_bytes.c from the app icon PNG.
+ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.c ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.h
+-    COMMAND file_to_c ${CMAKE_SOURCE_DIR}/icons/app.png icon_bytes ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.c ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.h
++    COMMAND ${RT64_HOST_FILE_TO_C} ${CMAKE_SOURCE_DIR}/icons/app.png icon_bytes ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.c ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.h
+     DEPENDS ${CMAKE_SOURCE_DIR}/icons/app.png
+ )
+ 
+@@ -267,6 +278,16 @@ if (APPLE)
+     include(${CMAKE_SOURCE_DIR}/.github/macos/apple_bundle.cmake)
+ endif()
+ 
++if (ANDROID)
++    find_package(SDL2 REQUIRED)
++
++    add_compile_definitions("PLUME_SDL_VULKAN_ENABLED")
++    add_compile_definitions("RT64_SDL_WINDOW_VULKAN")
++
++    target_include_directories(BanjoRecompiled PRIVATE ${SDL2_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
++    target_link_libraries(BanjoRecompiled PRIVATE ${FREETYPE_LIBRARY} SDL2::SDL2 android log)
++endif()
++
+ if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+     find_package(SDL2 REQUIRED)
+ 
+@@ -354,7 +375,7 @@ foreach(NRM_FILE ${NRM_FILES})
+ 
+     add_custom_command(
+         OUTPUT ${OUT_C} ${OUT_H}
+-        COMMAND file_to_c ${NRM_FILE} ${NRM_NAME} ${OUT_C} ${OUT_H}
++        COMMAND ${RT64_HOST_FILE_TO_C} ${NRM_FILE} ${NRM_NAME} ${OUT_C} ${OUT_H}
+         DEPENDS ${NRM_FILE}
+     )
+ 
+diff --git a/src/android/nfd_android_stub.cpp b/src/android/nfd_android_stub.cpp
+new file mode 100644
+index 0000000..cc946a4
+--- /dev/null
++++ b/src/android/nfd_android_stub.cpp
+@@ -0,0 +1,147 @@
++// Android has no native file dialog backend; file dialogs report cancel. Via JFG Android port.
++// From Zelda64Recomp-Android (linkzenic).
++#include "nfd.h"
++
++#include <cstdlib>
++
++namespace {
++constexpr const char* kUnavailable = "Native file dialogs are unavailable on Android.";
++}
++
++extern "C" {
++
++NFD_API void NFD_FreePathN(nfdnchar_t* filePath) {
++    std::free(filePath);
++}
++
++NFD_API void NFD_FreePathU8(nfdu8char_t* filePath) {
++    std::free(filePath);
++}
++
++NFD_API nfdresult_t NFD_Init(void) {
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_Quit(void) {
++}
++
++NFD_API nfdresult_t NFD_OpenDialogN(nfdnchar_t** outPath, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogU8(nfdu8char_t** outPath, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogMultipleN(const nfdpathset_t** outPaths, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*) {
++    if (outPaths != nullptr) {
++        *outPaths = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogMultipleU8(const nfdpathset_t** outPaths, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*) {
++    if (outPaths != nullptr) {
++        *outPaths = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_SaveDialogN(nfdnchar_t** outPath, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_SaveDialogU8(nfdu8char_t** outPath, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_PickFolderN(nfdnchar_t** outPath, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_PickFolderU8(nfdu8char_t** outPath, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API const char* NFD_GetError(void) {
++    return kUnavailable;
++}
++
++NFD_API void NFD_ClearError(void) {
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetCount(const nfdpathset_t*, nfdpathsetsize_t* count) {
++    if (count != nullptr) {
++        *count = 0;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetPathN(const nfdpathset_t*, nfdpathsetsize_t, nfdnchar_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_ERROR;
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetPathU8(const nfdpathset_t*, nfdpathsetsize_t, nfdu8char_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_ERROR;
++}
++
++NFD_API void NFD_PathSet_FreePathN(const nfdnchar_t* filePath) {
++    std::free(const_cast<nfdnchar_t*>(filePath));
++}
++
++NFD_API void NFD_PathSet_FreePathU8(const nfdu8char_t* filePath) {
++    std::free(const_cast<nfdu8char_t*>(filePath));
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetEnum(const nfdpathset_t*, nfdpathsetenum_t* outEnumerator) {
++    if (outEnumerator != nullptr) {
++        outEnumerator->ptr = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_PathSet_FreeEnum(nfdpathsetenum_t*) {
++}
++
++NFD_API nfdresult_t NFD_PathSet_EnumNextN(nfdpathsetenum_t*, nfdnchar_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API nfdresult_t NFD_PathSet_EnumNextU8(nfdpathsetenum_t*, nfdu8char_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_PathSet_Free(const nfdpathset_t*) {
++}
++
++}
+diff --git a/src/main/main.cpp b/src/main/main.cpp
+index ba63124..bab0097 100644
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -615,6 +615,9 @@ void on_launcher_init(recompui::LauncherMenu *menu) {
+ 
+ #define REGISTER_FUNC(name) recomp::overlays::register_base_export(#name, name)
+ 
++static const char* cli_rom_path = nullptr;
++static bool cli_skip_launcher = false;
++
+ int main(int argc, char** argv) {
+     (void)argc;
+     (void)argv;
+@@ -643,6 +646,16 @@ int main(int argc, char** argv) {
+     // Process arguments.
+     for (int i = 1; i < argc; i++)
+     {
++        // --rom <path>: select and validate a ROM without the launcher's file picker (launchers, handhelds).
++        if (strcmp(argv[i], "--rom") == 0 && i + 1 < argc) {
++            cli_rom_path = argv[++i];
++            continue;
++        }
++        // --skip-launcher: start the game directly once a valid ROM is stored.
++        if (strcmp(argv[i], "--skip-launcher") == 0) {
++            cli_skip_launcher = true;
++            continue;
++        }
+         if (strcmp(argv[i], "--show-console") == 0)
+         {
+             if (GetConsoleWindow() == nullptr)
+@@ -803,6 +816,18 @@ int main(int argc, char** argv) {
+     // Register the .rtz texture pack file format with the previous content type as its only allowed content type.
+     recomp::mods::register_mod_container_type("rtz", std::vector{ texture_pack_content_type_id }, false);
+ 
++    if (cli_rom_path != nullptr) {
++        recomp::RomValidationError rom_error = recomp::select_rom(cli_rom_path, supported_games[0].game_id);
++        fprintf(stderr, "--rom %s: %s\n", cli_rom_path,
++            rom_error == recomp::RomValidationError::Good ? "accepted" : "rejected (wrong or modified ROM)");
++    }
++    if (cli_skip_launcher && recomp::is_rom_valid(supported_games[0].game_id)) {
++        // Needs the runtime to set a dummy VI mode before the game's first frame ("Always call set_dummy_vi at
++        // least once"), as when the launcher starts the game.
++        recomp::start_game(supported_games[0].game_id);
++        recompui::hide_all_contexts();
++    }
++
+     recomp::start(
+         project_version,
+         {},
+-- 
+2.43.0
+

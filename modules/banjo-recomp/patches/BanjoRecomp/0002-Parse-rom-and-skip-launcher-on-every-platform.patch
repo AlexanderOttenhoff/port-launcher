@@ -1,0 +1,68 @@
+From 27f576fb3e541daf050eafd0fabcb5b7c7138fd3 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 12:53:31 +1100
+Subject: [PATCH 2/5] Parse --rom and --skip-launcher on every platform
+
+The existing argument loop is Windows-only.
+---
+ lib/N64ModernRuntime |  2 +-
+ lib/rt64             |  2 +-
+ src/main/main.cpp    | 21 +++++++++++----------
+ 3 files changed, 13 insertions(+), 12 deletions(-)
+
+diff --git a/lib/N64ModernRuntime b/lib/N64ModernRuntime
+index ca568b6..3857355 160000
+--- a/lib/N64ModernRuntime
++++ b/lib/N64ModernRuntime
+@@ -1 +1 @@
+-Subproject commit ca568b6ad79b9029d14077f0c3ffa757727c5559
++Subproject commit 3857355f9ef466494b193c973b3ea62b3c0b3560
+diff --git a/lib/rt64 b/lib/rt64
+index 6f1c2d9..43f9516 160000
+--- a/lib/rt64
++++ b/lib/rt64
+@@ -1 +1 @@
+-Subproject commit 6f1c2d99a4ea571c139f449c326fd176ba8f3496
++Subproject commit 43f951698701782ded06280c73b6d1c39e1aed19
+diff --git a/src/main/main.cpp b/src/main/main.cpp
+index bab0097..bcedd3f 100644
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -639,6 +639,17 @@ int main(int argc, char** argv) {
+     // Initialize random seed for icon easter egg.
+     std::srand(std::time(nullptr));
+ 
++    // Arguments for launchers and handhelds, on every platform:
++    //   --rom <path>      select and validate a ROM without the launcher's file picker
++    //   --skip-launcher   start the game directly once a valid ROM is stored
++    for (int i = 1; i < argc; i++) {
++        if (strcmp(argv[i], "--rom") == 0 && i + 1 < argc) {
++            cli_rom_path = argv[++i];
++        } else if (strcmp(argv[i], "--skip-launcher") == 0) {
++            cli_skip_launcher = true;
++        }
++    }
++
+ #ifdef _WIN32
+     // Set up high resolution timing period.
+     timeBeginPeriod(1);
+@@ -646,16 +657,6 @@ int main(int argc, char** argv) {
+     // Process arguments.
+     for (int i = 1; i < argc; i++)
+     {
+-        // --rom <path>: select and validate a ROM without the launcher's file picker (launchers, handhelds).
+-        if (strcmp(argv[i], "--rom") == 0 && i + 1 < argc) {
+-            cli_rom_path = argv[++i];
+-            continue;
+-        }
+-        // --skip-launcher: start the game directly once a valid ROM is stored.
+-        if (strcmp(argv[i], "--skip-launcher") == 0) {
+-            cli_skip_launcher = true;
+-            continue;
+-        }
+         if (strcmp(argv[i], "--show-console") == 0)
+         {
+             if (GetConsoleWindow() == nullptr)
+-- 
+2.43.0
+

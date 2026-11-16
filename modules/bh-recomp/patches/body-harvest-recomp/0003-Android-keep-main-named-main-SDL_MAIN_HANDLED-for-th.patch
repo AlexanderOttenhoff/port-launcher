@@ -1,0 +1,32 @@
+From d20742c832dba4093159abba8d4f1d0eee68679a Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <alexander.ottenhoff@gmail.com>
+Date: Sat, 14 Nov 2026 12:45:49 +1100
+Subject: [PATCH 3/3] Android: keep main() named main (SDL_MAIN_HANDLED) for
+ the port-launcher shim
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/main.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/main.cpp b/src/main.cpp
+index b562f0b..2de85df 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -5,6 +5,13 @@
+ // callbacks ultramodern needs, and starts the runtime. Copied from Hybrid Heaven:
+ // Recompiled's main.cpp, itself Pilotwings 64's and Wave Race 64's.
+ 
++// Android (port-launcher module): SDL_main.h renames main() to SDL_main on
++// Android, but the module's shim calls the real main() (after
++// SDL_SetMainReady). Keep the name, as the RecompFrontend ports do.
++#if defined(__ANDROID__)
++#   define SDL_MAIN_HANDLED
++#endif
++
+ #include "bh/crash_handler.h"
+ #include "bh/rom.h"
+ #if BH_WITH_RUNTIME && BH_WITH_RECOMPILED
+-- 
+2.43.0
+

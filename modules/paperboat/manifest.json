@@ -1,0 +1,25 @@
+{
+  "spec": 0,
+  "id": "paperboat",
+  "name": "PaperBoat",
+  "version": "1.0.3+plm.5",
+  "family": "libultraship",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/HarbourMasters/PaperBoat", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "CC0-1.0",
+  "credits": "Harbour Masters and the Paper Mario decompilation contributors",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.paper-mario.us",
+      "title": "Paper Mario", "game_code": "NMQE",
+      "region": "US", "revision": "",
+      "sha1": ["3837f44cda784b466c9a2d99df70d77c322b97a0"]
+    }
+  ],
+  "capabilities": { "mods": ["o2r"], "texture_packs": ["o2r"], "achievements": false }
+}

@@ -1,0 +1,38 @@
+From bcbbc82d6a19898826fe20fd03b27c4c3933dfc5 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 18:47:06 +1100
+Subject: [PATCH 2/4] Vulkan (Android): reserve a boundless range's whole
+ declared count in its pool
+
+Adreno returns VK_ERROR_FRAGMENTATION for a variable-count allocation
+from a pool sized to just the variable count. On Android, size the pool
+for the layout's whole declared range; the set still gets the variable
+count. Other platforms are unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+(cherry picked from commit 488d5b9e39be8ae6919501f62a3e95e7862c578c)
+---
+ plume_vulkan.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index f757c06..0ebf6d7 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -1899,7 +1899,13 @@ namespace plume {
+             boundlessRangeSize = std::max(desc.boundlessRangeSize, 1U);
+ 
+             const RenderDescriptorRange &lastDescriptorRange = desc.descriptorRanges[desc.descriptorRangesCount - 1];
++#       if defined(__ANDROID__)
++            // Adreno fails variable-count allocations (VK_ERROR_FRAGMENTATION) from a pool sized to just the variable
++            // count; reserve the layout's whole declared range. The set itself still gets the variable count.
++            typeCounts[toVk(lastDescriptorRange.type)] += std::max(boundlessRangeSize, lastDescriptorRange.count);
++#       else
+             typeCounts[toVk(lastDescriptorRange.type)] += boundlessRangeSize;
++#       endif
+             rangeCount--;
+         }
+ 
+-- 
+2.43.0
+

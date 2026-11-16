@@ -1,0 +1,123 @@
+From cb1290a580f7b69c19d86b77ac84fe334155afd3 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 15:26:22 +1100
+Subject: [PATCH] Android: Start skips level intros, level-complete cutscenes,
+ warp entries and the ending (fast-forward)
+
+---
+ src/port/Game.cpp  | 19 +++++++++++++++++
+ src/sys/sys_main.c | 53 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 72 insertions(+)
+
+diff --git a/src/port/Game.cpp b/src/port/Game.cpp
+index ef7894be..5a655f78 100644
+--- a/src/port/Game.cpp
++++ b/src/port/Game.cpp
+@@ -13,14 +13,33 @@ extern "C" {
+     void AudioThread_CreateTask();
+ }
+ 
++#ifdef __ANDROID__
++extern "C" s32 gPlmSkipping;      // sys_main.c: Start-to-skip
++extern "C" s32 gPlmSuppressPush;
++#endif
++
+ extern "C"
+ void Graphics_PushFrame(Gfx* data) {
++#ifdef __ANDROID__
++    if (gPlmSuppressPush) {
++        return;  // a fast-forwarded tick: built but not presented
++    }
++#endif
+     GameEngine::ProcessGfxCommands(data);
+ }
+ 
+ extern "C" void Timer_Update();
+ 
+ void push_frame() {
++#ifdef __ANDROID__
++    // Skipping a cutscene: 15 extra ticks per displayed frame (16x), not presented.
++    for (int i = 0; gPlmSkipping && i < 15; i++) {
++        gPlmSuppressPush = 1;
++        Graphics_ThreadUpdate();
++        Timer_Update();
++        gPlmSuppressPush = 0;
++    }
++#endif
+     Graphics_ThreadUpdate();
+     GameEngine::StartAudioFrame();
+     GameEngine::Instance->StartFrame();
+diff --git a/src/sys/sys_main.c b/src/sys/sys_main.c
+index 11140abb..37d94b7f 100644
+--- a/src/sys/sys_main.c
++++ b/src/sys/sys_main.c
+@@ -229,6 +229,56 @@ void Graphics_ThreadEntry(void* arg0) {
+     // }
+ }
+ 
++#ifdef __ANDROID__
++#include "global.h"
++
++// [port launcher] Start skips cutscenes (its baseline: every cutscene skippable, never skipped automatically).
++// Pressing Start in a level's opening sequence, its level-complete cutscene, a warp-zone entry or the ending latches
++// a skip: push_frame (port/Game.cpp) then runs extra game ticks per displayed frame without presenting them, so each
++// sequence ends exactly as it would on its own, only faster. Start stays hidden from the game until it is released,
++// so it can't pause the moment play resumes.
++s32 gPlmSkipping = 0;
++s32 gPlmSuppressPush = 0;
++static s32 sPlmHideStart = 0;
++
++static bool Plm_InSkippableCutscene(void) {
++    if (gGameState == GSTATE_ENDING) {
++        return true;
++    }
++    if (gGameState != GSTATE_PLAY || gPlayer == NULL) {
++        return false;
++    }
++    switch (gPlayer[0].state) {
++        case PLAYERSTATE_LEVEL_INTRO:
++        case PLAYERSTATE_LEVEL_COMPLETE:
++        case PLAYERSTATE_ENTER_WARP_ZONE:
++            return true;
++        default:
++            return false;
++    }
++}
++
++static void Plm_SkipInput(void) {
++    const s32 c = gMainController;
++    if (!gPlmSkipping && (gControllerPress[c].button & START_BUTTON) && Plm_InSkippableCutscene()) {
++        gPlmSkipping = 1;
++        sPlmHideStart = 1;
++    }
++    if (gPlmSkipping && !Plm_InSkippableCutscene()) {
++        gPlmSkipping = 0;
++    }
++    if (sPlmHideStart) {
++        if (!(gControllerHold[c].button & START_BUTTON) && !gPlmSkipping) {
++            sPlmHideStart = 0;
++        }
++        for (s32 i = 0; i < 4; i++) {
++            gControllerHold[i].button &= ~START_BUTTON;
++            gControllerPress[i].button &= ~START_BUTTON;
++        }
++    }
++}
++#endif
++
+ void Graphics_ThreadUpdate() {
+ 
+     if (GfxDebuggerIsDebugging()) {
+@@ -239,6 +289,9 @@ void Graphics_ThreadUpdate() {
+     gSysFrameCount++;
+     Graphics_InitializeTask(gSysFrameCount);
+     Controller_UpdateInput();
++#ifdef __ANDROID__
++    Plm_SkipInput();
++#endif
+     Controller_ReadData();
+     Controller_Rumble();
+     Main_SetVIMode();
+-- 
+2.43.0
+

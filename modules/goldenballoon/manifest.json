@@ -1,0 +1,44 @@
+{
+  "spec": 0,
+  "id": "goldenballoon",
+  "name": "Golden Balloon",
+  "version": "1.8.0+plm.7",
+  "family": "decomp-port",
+  "maturity": "experimental",
+  "upstream": {
+    "repo": "https://github.com/akratch/goldenballoon",
+    "commit": "@UPSTREAM_COMMIT@"
+  },
+  "license": "MIT",
+  "credits": "akratch and the Golden Balloon contributors; the Diddy Kong Racing decompilation contributors",
+  "host": {
+    "type": "sdl2",
+    "sdl": "2.32"
+  },
+  "abi": 0,
+  "platforms": [
+    "android-arm64"
+  ],
+  "graphics": {
+    "api": "gles",
+    "min_version": "3.2"
+  },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.diddy-kong-racing.us-1.1",
+      "title": "Diddy Kong Racing",
+      "game_code": "NDYE",
+      "region": "US",
+      "revision": "1.1",
+      "sha1": [
+        "6d96743d46f8c0cd0edb0ec5600b003c89b93755"
+      ]
+    }
+  ],
+  "capabilities": {
+    "mods": [],
+    "texture_packs": [],
+    "achievements": false
+  }
+}

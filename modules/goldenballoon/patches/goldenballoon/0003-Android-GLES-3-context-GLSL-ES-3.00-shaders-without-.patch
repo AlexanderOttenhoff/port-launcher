@@ -1,0 +1,122 @@
+From cb46b4363f2013a4acb39e62a5dda2174942d843 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 17:56:24 +1100
+Subject: [PATCH] Android: GLES 3 context, GLSL ES 3.00 shaders without
+ noperspective (port launcher)
+
+---
+ platform/fast3d/gfx_opengl.c | 26 +++++++++++++++++---------
+ platform/platform_sdl_min.c  |  9 +++++++++
+ 2 files changed, 26 insertions(+), 9 deletions(-)
+
+diff --git a/platform/fast3d/gfx_opengl.c b/platform/fast3d/gfx_opengl.c
+index 5ddef467..ff264ead 100644
+--- a/platform/fast3d/gfx_opengl.c
++++ b/platform/fast3d/gfx_opengl.c
+@@ -30,6 +30,14 @@
+  * would just be cosmetic drift for no behavioral gain on this repo's
+  * targets. */
+ #ifdef MGB64_PORTMASTER_GLES
++/* Port launcher (Android): GLSL ES has no noperspective qualifier (only through an NV extension), so the GLES
++ * shaders interpolate those varyings with perspective correction; and #version 300 es, which every GLES 3 device
++ * (and the emulator's GLES 3.0) compiles. Possible small visual differences: fog and colour interpolation. */
++#define GFX_GLSL_NOPERSPECTIVE ""
++#else
++#define GFX_GLSL_NOPERSPECTIVE "noperspective "
++#endif
++#ifdef MGB64_PORTMASTER_GLES
+ #include <GLES3/gl32.h>
+ #elif defined(__APPLE__)
+ #define GL_SILENCE_DEPRECATION
+@@ -992,11 +1000,11 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(uint64_t shad
+     size_t num_floats = 4;
+     const char *input_interp =
+         (gfx_diag_noperspective_inputs_enabled() || cc_features.noperspective_inputs) ?
+-        "noperspective " : "";
++        GFX_GLSL_NOPERSPECTIVE : "";
+     const char *texcoord_interp =
+         (gfx_diag_noperspective_texcoords_enabled() || cc_features.noperspective_texcoords) ?
+-        "noperspective " : "";
+-    const char *fog_interp = cc_features.noperspective_fog ? "noperspective " : "";
++        GFX_GLSL_NOPERSPECTIVE : "";
++    const char *fog_interp = cc_features.noperspective_fog ? GFX_GLSL_NOPERSPECTIVE : "";
+     bool quantize_combiner = gfx_diag_quantize_combiner_enabled();
+     bool uses_tile_mask =
+         cc_features.tile_mask[0][0] || cc_features.tile_mask[0][1] ||
+@@ -1004,7 +1012,7 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(uint64_t shad
+ 
+     /* Use GLSL 150 for macOS Core Profile, 320 es for GLES3, 330 elsewhere */
+ #ifdef MGB64_PORTMASTER_GLES
+-    append_line(vs_buf, sizeof(vs_buf), &vs_len, "#version 320 es");
++    append_line(vs_buf, sizeof(vs_buf), &vs_len, "#version 300 es");
+     append_line(vs_buf, sizeof(vs_buf), &vs_len, "precision mediump float;");
+ #elif defined(__APPLE__)
+     append_line(vs_buf, sizeof(vs_buf), &vs_len, "#version 150");
+@@ -1132,7 +1140,7 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(uint64_t shad
+ 
+     /* Fragment shader */
+ #ifdef MGB64_PORTMASTER_GLES
+-    append_line(fs_buf, sizeof(fs_buf), &fs_len, "#version 320 es");
++    append_line(fs_buf, sizeof(fs_buf), &fs_len, "#version 300 es");
+     append_line(fs_buf, sizeof(fs_buf), &fs_len, "precision mediump float;");
+     append_line(fs_buf, sizeof(fs_buf), &fs_len, "out vec4 fragColor;");
+ #elif defined(__APPLE__)
+@@ -3477,7 +3485,7 @@ static GLuint gfx_opengl_compile_filter_shader(GLenum type, const char *source)
+ static bool gfx_opengl_ensure_output_filter_program(void) {
+     static const char *vs_source =
+ #ifdef MGB64_PORTMASTER_GLES
+-        "#version 320 es\n"
++        "#version 300 es\n"
+         "precision mediump float;\n"
+ #else
+         "#version 330 core\n"
+@@ -3494,7 +3502,7 @@ static bool gfx_opengl_ensure_output_filter_program(void) {
+         "}\n";
+     static const char *fs_source =
+ #ifdef MGB64_PORTMASTER_GLES
+-        "#version 320 es\n"
++        "#version 300 es\n"
+         "precision mediump float;\n"
+ #else
+         "#version 330 core\n"
+@@ -4330,12 +4338,12 @@ static bool gfx_opengl_ensure_shadow_resources(int res, int layers) {
+     if (g_shadow_program == 0) {
+ #ifdef MGB64_PORTMASTER_GLES
+         static const char *vs =
+-            "#version 320 es\n"
++            "#version 300 es\n"
+             "precision mediump float;\n"
+             "in vec3 aShadowPos;\n"
+             "uniform mat4 uShadowMat;\n"
+             "void main() { gl_Position = uShadowMat * vec4(aShadowPos, 1.0); }\n";
+-        static const char *fs = "#version 320 es\nprecision mediump float;\nvoid main() {}\n";
++        static const char *fs = "#version 300 es\nprecision mediump float;\nvoid main() {}\n";
+ #elif defined(__APPLE__)
+         static const char *vs =
+             "#version 150\n"
+diff --git a/platform/platform_sdl_min.c b/platform/platform_sdl_min.c
+index 952ac542..c7881ea1 100644
+--- a/platform/platform_sdl_min.c
++++ b/platform/platform_sdl_min.c
+@@ -937,9 +937,18 @@ static void sdl_apply_gl_present_policy(void) {
+ }
+ 
+ static int sdl_init_gl(Uint32 base_flags) {
++#ifdef __ANDROID__
++    /* Port launcher: Android has only GLES. Ask for ES 3.0; drivers hand back their highest compatible version
++     * (3.2 on current devices), which the GLES shader path (#version 320 es) needs. glad's loader understands the
++     * "OpenGL ES" version string and fills its pointers from EGL. */
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
++#else
+     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
++#endif
+     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+ 
+-- 
+2.43.0
+

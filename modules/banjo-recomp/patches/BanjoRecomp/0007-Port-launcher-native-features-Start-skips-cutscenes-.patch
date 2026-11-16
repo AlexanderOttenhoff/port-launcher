@@ -1,0 +1,81 @@
+From 2a1c24bbd50107d00e54c613ad6d7f1b2045548d Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 18:53:35 +1100
+Subject: [PATCH] Port-launcher native features: Start skips cutscenes, fast
+ text (options from the host)
+
+---
+ patches/plm_native.c | 51 ++++++++++++++++++++++++++++++++++++++++++++
+ patches/syms.ld      |  1 +
+ 2 files changed, 52 insertions(+)
+ create mode 100644 patches/plm_native.c
+
+diff --git a/patches/plm_native.c b/patches/plm_native.c
+new file mode 100644
+index 0000000..e638c63
+--- /dev/null
++++ b/patches/plm_native.c
+@@ -0,0 +1,51 @@
++// Port-launcher native features (docs/planning/MENU.md): the N64 baseline built into the module and switched from
++// the launcher's own in-game menu, instead of community mods. Each reads its setting live from the module shim
++// through plm_get_option (a host function registered by the shim), so a change in the menu applies at once.
++// Start-to-skip and fast text follow ProxyBK's SkipIt mod (CC0, github.com/garrettjoecox/ProxyBK_RecompMods).
++
++#include "patches.h"
++#include "functions.h"
++#include "core1/pfsmanager.h"
++#include "../src/core2/gc/zoombox.h"
++#include "patch_helpers.h"
++
++#define PLM_OPTION_CUTSCENE_SKIP 0 // 0: off, 1: Start skips a cutscene
++#define PLM_OPTION_TEXT_SPEED 1    // 0: original, 1: fast
++
++DECLARE_FUNC(u32, plm_get_option, u32 id);
++
++extern PfsManagerControllerData D_80281138[4];
++// Game functions without a declaration in the decomp's public headers.
++enum map_e map_get(void);
++s32 mapSpecificFlags_get(s32 flag);
++
++// Cutscenes that run as their own maps end through this check; Start now ends them too (when enabled).
++RECOMP_PATCH void cutscenetrigger_check(s32 cs_map, s32 arg1, s32 return_map, s32 return_exit, bool (*condFunc)(void)) {
++    if (map_get() != cs_map)
++        return;
++
++    bool skip = plm_get_option(PLM_OPTION_CUTSCENE_SKIP) == 1 && D_80281138[0].start_button;
++    if ((condFunc && condFunc()) || mapSpecificFlags_get(arg1) || skip) {
++        mapSpecificFlags_set(arg1, 0);
++        transitionToMap(return_map, (return_exit == -1) ? 0 : return_exit, 1);
++    }
++}
++
++// unk190 is the time per character of a dialog box. Fast text halves it for text the player may speed up anyway
++// (arg5); holding A still halves it again, as in the original.
++RECOMP_PATCH void gczoombox_func_803184C8(GcZoombox *this, f32 arg1, s32 arg2, s32 arg3, f32 animation_duration, bool arg5, bool arg6) {
++    if (this != NULL) {
++        f32 chars_per_second = arg1;
++        if (arg5 && plm_get_option(PLM_OPTION_TEXT_SPEED) == 1) {
++            chars_per_second *= 2.0f;
++        }
++        this->unk182 = arg2;
++        this->unk184 = arg3;
++        this->unk190 = 1.0 / chars_per_second;
++        if (this->anim_ctrl != NULL) {
++            anctrl_setDuration(this->anim_ctrl, animation_duration);
++        }
++        this->unk1A4_12 = BOOL(arg5);
++        this->unk1A4_10 = BOOL(arg6);
++    }
++}
+diff --git a/patches/syms.ld b/patches/syms.ld
+index a757feb..e5c077c 100644
+--- a/patches/syms.ld
++++ b/patches/syms.ld
+@@ -53,3 +53,4 @@ recomp_get_first_person_inverted_axes = 0x8F0000C0;
+ recomp_get_analog_cam_sensitivity = 0x8F0000C4;
+ recomp_run_ui_callbacks = 0x8F0000C8;
+ recomp_get_jinjo_saving_enabled = 0x8F0000CC;
++plm_get_option = 0x8F000100;
+-- 
+2.43.0
+

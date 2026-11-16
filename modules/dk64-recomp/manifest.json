@@ -1,0 +1,26 @@
+{
+  "spec": 0,
+  "id": "dk64-recomp",
+  "name": "Donkey Kong 64: Recompiled",
+  "version": "1.0.x+plm.1",
+  "family": "n64recomp",
+  "maturity": "experimental",
+  "native_launcher": true,
+  "upstream": { "repo": "https://github.com/Rainchus/Donkey-Kong-64-Recompiled", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "GPL-3.0-only",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "vulkan", "min_version": "1.2" },
+  "min_android_api": 28,
+  "game_lib": { "build": "on-device", "script": "build_from_rom.sh" },
+  "games": [
+    {
+      "id": "n64.donkey-kong-64.us-1.0",
+      "title": "Donkey Kong 64", "game_code": "NDYE",
+      "region": "US", "revision": "1.0",
+      "sha1": ["cf806ff2603640a748fca5026ded28802f1f4a50"]
+    }
+  ],
+  "capabilities": { "mods": ["nrm"], "texture_packs": ["rtz"], "achievements": false }
+}

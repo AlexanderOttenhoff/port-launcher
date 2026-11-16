@@ -1,0 +1,44 @@
+From a70606aececd9c64d742ff02920bd81fd37fb6cc Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 13:39:03 +1100
+Subject: [PATCH] Android: the launcher's controller layout as the pad defaults
+
+---
+ port/src/input.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/port/src/input.c b/port/src/input.c
+index 5fc60b3b..7cb95cf4 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -454,6 +454,19 @@ enum { PA_FIRE, PA_AIM, PA_USE, PA_RELOAD, PA_CROUCH, PA_NEXTWPN, PA_PREVWPN,
+ /* Jinx 1.1 (D394) = def. Fire/Aim analog triggers act in any state; every
+  * digital source only acts while a stage is playable (facePlayable). */
+ static const struct { const char *key; const char *label; const char *def; } kPadAct[PA_COUNT] = {
++#ifdef __ANDROID__
++    /* Port launcher: its one modern layout, bound by button label like its other
++     * shooters (the device's controller style decides where each label sits). */
++    [PA_FIRE]    = { "Fire",       "Fire",             "righttrigger" },
++    [PA_AIM]     = { "Aim",        "Aim",              "lefttrigger" },
++    [PA_USE]     = { "Use",        "Use / action",     "a" },
++    [PA_RELOAD]  = { "Reload",     "Reload",           "y" },
++    [PA_CROUCH]  = { "Crouch",     "Crouch",           "b,leftstick" },
++    [PA_NEXTWPN] = { "NextWeapon", "Next weapon",      "x" },
++    [PA_PREVWPN] = { "PrevWeapon", "Previous weapon",  "leftshoulder" },
++    [PA_GADGET]  = { "Gadget",     "Cycle gadget",     "rightshoulder" },
++    [PA_START]   = { "Start",      "Start / pause",    "start" },
++#else
+     [PA_FIRE]    = { "Fire",       "Fire",             "righttrigger" },
+     [PA_AIM]     = { "Aim",        "Aim",              "lefttrigger,leftshoulder" },
+     [PA_USE]     = { "Use",        "Use / action",     "a" },
+@@ -463,6 +476,7 @@ static const struct { const char *key; const char *label; const char *def; } kPa
+     [PA_PREVWPN] = { "PrevWeapon", "Previous weapon",  "none" },
+     [PA_GADGET]  = { "Gadget",     "Cycle gadget",     "b" },
+     [PA_START]   = { "Start",      "Start / pause",    "start" },
++#endif
+ };
+ 
+ /* D643 (#145 b/c, #149): Original control scheme = a STRICT virtual N64
+-- 
+2.43.0
+

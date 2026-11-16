@@ -1,0 +1,39 @@
+From 3a6ac53232ec655069e8d323e8c2aab7ee0a073e Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 12:07:55 +1100
+Subject: [PATCH 2/4] Launcher hook before the startup settings are read
+ (PortLauncher_BeforeIntro)
+
+---
+ src/port/Game.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/port/Game.cpp b/src/port/Game.cpp
+index 19a41f631..3230cc350 100644
+--- a/src/port/Game.cpp
++++ b/src/port/Game.cpp
+@@ -1020,6 +1020,10 @@ void CM_ThrowRuntimeError(const char* fmt, ...) {
+ #include <CoreFoundation/CoreFoundation.h>
+ #endif
+ 
++// A launcher hosting the game as a library (port-launcher) may define this to apply its settings once the config and
++// window exist but before main() reads the startup settings (gSkipIntro). Weak: absent in upstream builds.
++extern "C" void PortLauncher_BeforeIntro(void) __attribute__((weak));
++
+ #ifdef _WIN32
+ int SDL_main(int argc, char** argv) {
+ #else
+@@ -1056,6 +1060,10 @@ extern "C"
+ 
+     CustomEngineInit();
+ 
++    if (PortLauncher_BeforeIntro != nullptr) {
++        PortLauncher_BeforeIntro();
++    }
++
+     switch(CVarGetInteger("gSkipIntro", 0)) {
+         case 0:
+             gMenuSelection = HARBOUR_MASTERS_MENU;
+-- 
+2.43.0
+

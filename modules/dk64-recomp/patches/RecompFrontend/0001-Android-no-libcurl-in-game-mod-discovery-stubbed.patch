@@ -1,0 +1,70 @@
+From 5a2d7f4175244e911d7e09b50bbca5a92a56d198 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Wed, 11 Nov 2026 19:59:21 +1100
+Subject: [PATCH] Android: no libcurl (in-game mod discovery stubbed)
+
+---
+ recompui/CMakeLists.txt                         | 10 +++++++---
+ .../src/composites/ui_mod_discovery_http.cpp    | 17 +++++++++++++++++
+ 2 files changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/recompui/CMakeLists.txt b/recompui/CMakeLists.txt
+index bbcf121..d4e4534 100644
+--- a/recompui/CMakeLists.txt
++++ b/recompui/CMakeLists.txt
+@@ -99,8 +99,10 @@ target_include_directories(recompui PUBLIC
+ build_vertex_shader(recompui "shaders/InterfaceVS.hlsl" "shaders/InterfaceVS.hlsl")
+ build_pixel_shader(recompui "shaders/InterfacePS.hlsl" "shaders/InterfacePS.hlsl")
+ 
+-# Find curl package from vcpkg
+-find_package(CURL REQUIRED)
++# Find curl package from vcpkg (not on Android: in-game mod discovery has no HTTP client there)
++if (NOT ANDROID)
++    find_package(CURL REQUIRED)
++endif()
+ 
+ target_include_directories(recompui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include/recompui")
+ 
+@@ -123,5 +125,7 @@ target_link_libraries(recompui PUBLIC
+     RmlUi::Debugger
+     lunasvg
+     miniz
+-    CURL::libcurl
+ )
++if (NOT ANDROID)
++    target_link_libraries(recompui PUBLIC CURL::libcurl)
++endif()
+diff --git a/recompui/src/composites/ui_mod_discovery_http.cpp b/recompui/src/composites/ui_mod_discovery_http.cpp
+index c312734..e0da747 100644
+--- a/recompui/src/composites/ui_mod_discovery_http.cpp
++++ b/recompui/src/composites/ui_mod_discovery_http.cpp
+@@ -1,5 +1,20 @@
+ #include "ui_mod_discovery.h"
+ 
++#ifdef __ANDROID__
++// Android (port-launcher): the launcher manages mods itself, so the in-game mod discovery has no HTTP client here.
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace recompui
++{
++    void curl_global_initialize() {}
++    std::string http_fetch_string(const std::string &) { throw std::runtime_error("Mod downloads are unavailable here"); }
++    std::vector<char> http_fetch_bytes(const std::string &) { throw std::runtime_error("Mod downloads are unavailable here"); }
++    void http_download_to_file(const std::string &, const std::string &) { throw std::runtime_error("Mod downloads are unavailable here"); }
++}
++#else
++
+ #include <algorithm>
+ #include <chrono>
+ #include <curl/curl.h>
+@@ -207,3 +222,5 @@ namespace recompui
+     }
+ 
+ }
++
++#endif
+-- 
+2.43.0
+

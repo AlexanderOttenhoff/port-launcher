@@ -1,0 +1,25 @@
+{
+  "spec": 0,
+  "id": "battleship",
+  "name": "BattleShip",
+  "version": "0.0.0+plm.5",
+  "family": "libultraship",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/JRickey/BattleShip", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "MIT",
+  "credits": "JRickey and the BattleShip contributors; VetriTheRetri and the Super Smash Bros. decompilation contributors",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.super-smash-bros.us",
+      "title": "Super Smash Bros.", "game_code": "NALE",
+      "region": "US", "revision": "",
+      "sha1": ["e2929e10fccc0aa84e5776227e798abc07cedabf"]
+    }
+  ],
+  "capabilities": { "mods": ["o2r"], "texture_packs": ["o2r"], "achievements": false }
+}

@@ -1,0 +1,55 @@
+From 479d86be09f3705290af9a7b6b5cc9df4211a04a Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 12:11:53 +1100
+Subject: [PATCH 3/4] Android: MobileImpl include path; Back/Select doesn't
+ open the port's menu
+
+---
+ src/port/SpaghettiGui.cpp | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/src/port/SpaghettiGui.cpp b/src/port/SpaghettiGui.cpp
+index 17bfb2ec2..04c28519a 100644
+--- a/src/port/SpaghettiGui.cpp
++++ b/src/port/SpaghettiGui.cpp
+@@ -17,7 +17,7 @@
+ #endif
+ 
+ #if defined(__ANDROID__) || defined(__IOS__)
+-#include "port/mobile/MobileImpl.h"
++#include "ship/port/mobile/MobileImpl.h" // libultraship moved it under ship/
+ #endif
+ 
+ #ifdef ENABLE_OPENGL
+@@ -39,6 +39,14 @@ IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARA
+ namespace Ship {
+ #define TOGGLE_BTN ImGuiKey_F1
+ #define TOGGLE_PAD_BTN ImGuiKey_GamepadBack
++// Port launcher: on Android the controller's Back/Select no longer opens the port's own menu (SpaghettiKart draws its
++// menu here rather than in libultraship's Gui, so libultraship's patch alone isn't enough); the launcher's menu
++// replaces it.
++#ifdef __ANDROID__
++#define PLM_PAD_TOGGLE_PRESSED() false
++#else
++#define PLM_PAD_TOGGLE_PRESSED() ImGui::IsKeyPressed(TOGGLE_PAD_BTN)
++#endif
+ 
+ void SpaghettiGui::DrawMenu() {
+     const std::shared_ptr<Window> wnd = Context::GetRawInstance()->GetWindow();
+@@ -105,10 +113,10 @@ void SpaghettiGui::DrawMenu() {
+     ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None | ImGuiDockNodeFlags_NoDockingInCentralNode);
+ 
+     if (ImGui::IsKeyPressed(TOGGLE_BTN) || ImGui::IsKeyPressed(ImGuiKey_Escape) ||
+-        (ImGui::IsKeyPressed(TOGGLE_PAD_BTN) && CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0))) {
+-        if ((ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(TOGGLE_PAD_BTN)) && GetMenu()) {
++        (PLM_PAD_TOGGLE_PRESSED() && CVarGetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0))) {
++        if ((ImGui::IsKeyPressed(ImGuiKey_Escape) || PLM_PAD_TOGGLE_PRESSED()) && GetMenu()) {
+             GetMenu()->ToggleVisibility();
+-        } else if ((ImGui::IsKeyPressed(TOGGLE_BTN) || ImGui::IsKeyPressed(TOGGLE_PAD_BTN)) && GetMenuBar()) {
++        } else if ((ImGui::IsKeyPressed(TOGGLE_BTN) || PLM_PAD_TOGGLE_PRESSED()) && GetMenuBar()) {
+             Gui::GetMenuBar()->ToggleVisibility();
+         }
+         if (wnd->IsFullscreen()) {
+-- 
+2.43.0
+

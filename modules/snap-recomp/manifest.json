@@ -1,0 +1,46 @@
+{
+  "spec": 0,
+  "id": "snap-recomp",
+  "name": "Snap64 Recomp",
+  "version": "1.1.7+plm.0",
+  "family": "n64recomp",
+  "native_launcher": true,
+  "upstream": {
+    "repo": "https://github.com/JackandBeans/Snap64Recomp",
+    "commit": "@UPSTREAM_COMMIT@"
+  },
+  "license": "GPL-3.0-only",
+  "host": {
+    "type": "sdl2",
+    "sdl": "2.32"
+  },
+  "abi": 0,
+  "platforms": [
+    "android-arm64"
+  ],
+  "graphics": {
+    "api": "vulkan",
+    "min_version": "1.2"
+  },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.pokemon-snap.us",
+      "title": "Pokémon Snap",
+      "game_code": "NPFE",
+      "region": "US",
+      "revision": "",
+      "sha1": [
+        "edc7c49cc568c045fe48be0d18011c30f393cbaf"
+      ]
+    }
+  ],
+  "capabilities": {
+    "mods": [
+      "nrm"
+    ],
+    "texture_packs": [],
+    "achievements": false
+  },
+  "maturity": "experimental"
+}

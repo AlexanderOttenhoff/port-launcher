@@ -1,0 +1,25 @@
+{
+  "spec": 0,
+  "id": "banjotooie-recomp",
+  "name": "Banjo-Tooie: Recompiled",
+  "version": "0.x+plm.1",
+  "family": "n64recomp",
+  "maturity": "experimental",
+  "native_launcher": true,
+  "upstream": { "repo": "https://github.com/Vidanox/BanjoTooieRecompiled", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "GPL-3.0-only",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "vulkan", "min_version": "1.2" },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.banjo-tooie.us-1.0",
+      "title": "Banjo-Tooie", "game_code": "NB7E",
+      "region": "US", "revision": "1.0",
+      "sha1": ["af1a89e12b638b8d82cc4c085c8e01d4cba03fb3"]
+    }
+  ],
+  "capabilities": { "mods": ["nrm"], "texture_packs": ["rtz"], "achievements": false }
+}

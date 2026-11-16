@@ -1,0 +1,30 @@
+From cbd5be3339a52ee30dd45f0d12b3858ce5fb6adc Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 13:25:10 +1100
+Subject: [PATCH] Android: build the game as a shared library
+
+---
+ mm/CMakeLists.txt | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/mm/CMakeLists.txt b/mm/CMakeLists.txt
+index f44c1b814..b44861fed 100644
+--- a/mm/CMakeLists.txt
++++ b/mm/CMakeLists.txt
+@@ -185,7 +185,12 @@ set(ALL_FILES
+ ################################################################################
+ # Target
+ ################################################################################
+-add_executable(${PROJECT_NAME} ${ALL_FILES})
++if(ANDROID)
++    # The game is a shared library that an SDL Java activity (here: the port launcher's host) loads.
++    add_library(${PROJECT_NAME} SHARED ${ALL_FILES})
++else()
++    add_executable(${PROJECT_NAME} ${ALL_FILES})
++endif()
+ 
+ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+ use_props(${PROJECT_NAME} "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_CXX_PROPS}")
+-- 
+2.43.0
+

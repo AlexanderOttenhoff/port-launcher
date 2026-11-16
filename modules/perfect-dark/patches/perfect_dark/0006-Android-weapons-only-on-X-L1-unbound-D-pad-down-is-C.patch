@@ -1,0 +1,91 @@
+From 17e047d2b449366c37585d9f5b438e2fe1206884 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Fri, 13 Nov 2026 16:53:37 +1100
+Subject: [PATCH] Android: weapons only on X (L1 unbound, D-pad down is
+ C-down); steady aim setting
+
+---
+ port/src/input.c    |  8 ++++----
+ src/game/bondmove.c | 24 ++++++++++++++++++++++++
+ 2 files changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/port/src/input.c b/port/src/input.c
+index 4c48716e8..d9921d9a2 100644
+--- a/port/src/input.c
++++ b/port/src/input.c
+@@ -216,19 +216,19 @@ void inputSetDefaultKeyBinds(s32 cidx, s32 n64mode)
+ 
+ #ifdef __ANDROID__
+ 	// Port launcher: one modern layout, bound by button label (SDL names = the labels the controller reports).
+-	// A use/confirm, B crouch/back, Y reload, X next weapon, L1 previous weapon, R1 secondary function,
+-	// D-pad down weapon wheel, D-pad left/right/up the remaining C buttons.
++	// A use/confirm, B crouch/back, Y reload, X next weapon (hold for the weapon wheel), R1 secondary function,
++	// the D-pad the C buttons. Owner 2026-11-13: weapons only on X. L1 (previous weapon) is unbound, and D-pad
++	// down is C-down like the other directions instead of a second wheel button (it opened the wheel mid-snipe).
+ 	static const u32 pcjoybinds[][2] = {
+ 		{ CK_A,      SDL_CONTROLLER_BUTTON_A             },
+ 		{ CK_X,      SDL_CONTROLLER_BUTTON_Y             },
+ 		{ CK_Y,      SDL_CONTROLLER_BUTTON_X             },
+ 		{ CK_8000,   SDL_CONTROLLER_BUTTON_B             },
+-		{ CK_DPAD_L, SDL_CONTROLLER_BUTTON_LEFTSHOULDER  },
+ 		{ CK_LTRIG,  SDL_CONTROLLER_BUTTON_RIGHTSHOULDER },
+ 		{ CK_RTRIG,  VK_JOY1_LTRIG - VK_JOY1_BEGIN       },
+ 		{ CK_ZTRIG,  VK_JOY1_RTRIG - VK_JOY1_BEGIN       },
+ 		{ CK_START,  SDL_CONTROLLER_BUTTON_START         },
+-		{ CK_DPAD_D, SDL_CONTROLLER_BUTTON_DPAD_DOWN     },
++		{ CK_C_D,    SDL_CONTROLLER_BUTTON_DPAD_DOWN     },
+ 		{ CK_C_U,    SDL_CONTROLLER_BUTTON_DPAD_UP       },
+ 		{ CK_C_R,    SDL_CONTROLLER_BUTTON_DPAD_RIGHT    },
+ 		{ CK_C_L,    SDL_CONTROLLER_BUTTON_DPAD_LEFT     },
+diff --git a/src/game/bondmove.c b/src/game/bondmove.c
+index a1575ff4b..fdb2717c7 100644
+--- a/src/game/bondmove.c
++++ b/src/game/bondmove.c
+@@ -49,6 +49,16 @@
+ // wheel, which stays open while held (activemenutick.c) and selects on release.
+ static s32 g_PlmWpnHold[MAX_PLAYERS];
+ 
++// Port launcher gameplay tweak "Steady aim" (setting pd.steady_aim, default on; the shim calls bmovePlmSetSteadyAim):
++// while aiming, the stick turns the view and the crosshair stays centred, instead of the stick moving the crosshair
++// around a still view; and turning doesn't swing the crosshair. Off restores the original.
++static volatile int g_PlmSteadyAim = 1;
++
++void bmovePlmSetSteadyAim(int on)
++{
++	g_PlmSteadyAim = on;
++}
++
+ static bool bmovePlmWeaponForward(s32 i, s8 contpad, u32 allowed, struct movedata *data)
+ {
+ 	s32 *hold = &g_PlmWpnHold[g_Vars.currentplayernum];
+@@ -491,6 +501,11 @@ static void bmoveApplyCrosshairSwivel(struct movedata *movedata, f32 mlookscale,
+ 		// Joystick only or no input - full sway
+ 		xscale = yscale = PLAYER_EXTCFG().crosshairsway;
+ 	}
++#ifdef __ANDROID__
++	if (g_PlmSteadyAim) {
++		xscale = yscale = 0.f;
++	}
++#endif
+ 	// Joystick x/y scaling
+ 	// 0.3f for x, 0.1f for y
+ 	*x = g_Vars.currentplayer->speedtheta * 0.3f * xscale + g_Vars.currentplayer->gunextraaimx;
+@@ -1389,6 +1404,15 @@ void bmoveProcessInput(bool allowc1x, bool allowc1y, bool allowc1buttons, bool i
+ 								movedata.cannaturalpitch = movedata.cannaturalpitch || (movedata.freelookdy != 0.0f);
+ 								movedata.cannaturalturn = movedata.cannaturalturn  || (movedata.freelookdx != 0.0f);
+ 							}
++#ifdef __ANDROID__
++							if (g_PlmSteadyAim && g_Vars.currentplayer->insightaimmode) {
++								// Steady aim: the stick turns the view (scaled by the zoom, as always), the crosshair
++								// stays put (canmanualaim off falls through to the swivel code, scaled to 0 above).
++								movedata.cannaturalpitch = true;
++								movedata.cannaturalturn = true;
++								movedata.canmanualaim = false;
++							}
++#endif
+ 						}
+ #endif
+ 
+-- 
+2.43.0
+

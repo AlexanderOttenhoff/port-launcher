@@ -1,0 +1,77 @@
+--- a/src/video/android/SDL_androidgl.c	2025-01-02 02:47:53.000000000 +1100
++++ b/src/video/android/SDL_androidgl.c	2026-11-16 09:44:37.935081734 +1100
+@@ -36,11 +36,16 @@
+ 
+ #include <dlfcn.h>
+ 
++/* port-launcher: the EGL surface this thread last bound its context to (see Android_GLES_SwapWindow). */
++static __thread EGLSurface plm_bound_surface = EGL_NO_SURFACE;
++
+ int Android_GLES_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context)
+ {
+     if (window && context) {
+-        return SDL_EGL_MakeCurrent(_this, ((SDL_WindowData *)window->driverdata)->egl_surface, context);
++        plm_bound_surface = ((SDL_WindowData *)window->driverdata)->egl_surface;
++        return SDL_EGL_MakeCurrent(_this, plm_bound_surface, context);
+     } else {
++        plm_bound_surface = EGL_NO_SURFACE;
+         return SDL_EGL_MakeCurrent(_this, NULL, NULL);
+     }
+ }
+@@ -71,6 +76,21 @@
+ 
+     /*_this->egl_data->eglWaitNative(EGL_CORE_NATIVE_ENGINE);
+     _this->egl_data->eglWaitGL();*/
++    /* port-launcher (sleep/wake fix, 2026-11-16): when Android recreates the window's surface (screen off and on,
++     * lock screen), SDL rebinds the GL context in the pause/resume code, on whichever thread happened to pump events.
++     * Ports that render on another thread than the one that pumps (GoldenEye: its main loop and its render thread
++     * both poll) were left with the context bound to the destroyed surface: a black screen until Home and back.
++     * Rebind here instead, on the rendering thread, whenever the window's surface isn't the one this thread drew to. */
++    {
++        EGLSurface surface = ((SDL_WindowData *)window->driverdata)->egl_surface;
++        SDL_GLContext context = SDL_GL_GetCurrentContext();
++        if (context && surface != EGL_NO_SURFACE && surface != plm_bound_surface) {
++            if (SDL_EGL_MakeCurrent(_this, surface, context) == 0) {
++                plm_bound_surface = surface;
++                __android_log_print(ANDROID_LOG_INFO, "SDL", "plm: rebound the GL context to the new window surface");
++            }
++        }
++    }
+     retval = SDL_EGL_SwapBuffers(_this, ((SDL_WindowData *)window->driverdata)->egl_surface);
+ 
+     SDL_UnlockMutex(Android_ActivityMutex);
+--- a/src/video/android/SDL_androidevents.c	2025-01-02 02:47:53.000000000 +1100
++++ b/src/video/android/SDL_androidevents.c	2026-11-16 09:45:00.592261135 +1100
+@@ -70,8 +70,18 @@
+ }
+ 
+ #ifdef SDL_VIDEO_OPENGL_EGL
++/* port-launcher: whether this thread held the context when it paused (android_egl_context_backup). Only that
++ * thread may restore it: binding it on another thread would fail (the render thread still holds it) and make SDL
++ * create a second context bound to the new surface, which then blocks the render thread's own rebind. */
++static __thread int plm_held_context = 0;
++
+ static void android_egl_context_restore(SDL_Window *window)
+ {
++    if (window && !plm_held_context) {
++        /* Another thread renders: it rebinds on its next swap (Android_GLES_SwapWindow). */
++        ((SDL_WindowData *)window->driverdata)->backup_done = 0;
++        return;
++    }
+     if (window) {
+         SDL_Event event;
+         SDL_WindowData *data = (SDL_WindowData *)window->driverdata;
+@@ -92,7 +102,12 @@
+     if (window) {
+         /* Keep a copy of the EGL Context so we can try to restore it when we resume */
+         SDL_WindowData *data = (SDL_WindowData *)window->driverdata;
+-        data->egl_context = SDL_GL_GetCurrentContext();
++        /* port-launcher: on a thread that doesn't hold the context (it renders elsewhere), keep the one we know
++         * rather than forgetting it; the rendering thread rebinds on its next swap (Android_GLES_SwapWindow). */
++        plm_held_context = SDL_GL_GetCurrentContext() != NULL;
++        if (plm_held_context) {
++            data->egl_context = SDL_GL_GetCurrentContext();
++        }
+         /* We need to do this so the EGLSurface can be freed */
+         SDL_GL_MakeCurrent(window, NULL);
+         data->backup_done = 1;

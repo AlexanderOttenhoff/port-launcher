@@ -1,0 +1,30 @@
+# Never commit game data
+*.z64
+*.n64
+*.v64
+*.o2r
+*.otr
+baserom*
+
+# Build output
+build*/
+.gradle/
+local.properties
+*.apk
+*.aab
+.cxx/
+survey/sources/
+
+# Private notes
+notes/
+bin/
+.kotlin/
+
+# Roms
+roms/
+# Planning documents: a private nested repository (owner 2026-11-17, kept out of the public tree)
+docs/planning/
+
+# Local tool state
+.claude/
+.vscode/

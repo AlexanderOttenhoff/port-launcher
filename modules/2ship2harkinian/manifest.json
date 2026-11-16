@@ -1,0 +1,55 @@
+{
+  "spec": 0,
+  "id": "2ship2harkinian",
+  "name": "2 Ship 2 Harkinian",
+  "version": "5.1.0+plm.8",
+  "family": "libultraship",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/HarbourMasters/2ship2harkinian", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "CC0-1.0",
+  "credits": "Harbour Masters and the Majora's Mask decompilation contributors (zeldaret)",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.majoras-mask.us-1.0",
+      "title": "The Legend of Zelda: Majora's Mask", "game_code": "NZSE",
+      "region": "US", "revision": "1.0",
+      "sha1": ["d6133ace5afaa0882cf214cf88daba39e266c078"]
+    }
+  ],
+  "capabilities": { "mods": ["o2r"], "texture_packs": ["o2r"], "achievements": false },
+  "select_to_game": true,
+  "mods": {
+    "sources": [
+      {
+        "label": "GameBanana",
+        "url": "https://gamebanana.com/games/20371"
+      }
+    ],
+    "curated": [
+      {
+        "id": "switch-pro-button-icons",
+        "name": "Switch Pro Button Icons",
+        "author": "digita-LUNA",
+        "license": "CC BY-NC-SA 4.0",
+        "description": "The HUD's C-button arrows, text prompts and ocarina notes become the buttons we map them to (Nintendo layout, like Ocarina of Time): C-up L, C-left Y, C-right X, C-down R, map Minus/Select. Vanilla-style icons.",
+        "homepage": "https://gamebanana.com/mods/517884",
+        "url": "https://gamebanana.com/dl/1207283",
+        "file": "switch_buttons_n64_style.zip",
+        "entries": [
+          "Modern Buttons N64 Style.o2r"
+        ],
+        "replaces": [
+          "gamebanana-517884~switch_buttons_n64_style.zip"
+        ]
+      }
+    ],
+    "preinstall": [
+      "switch-pro-button-icons"
+    ]
+  }
+}

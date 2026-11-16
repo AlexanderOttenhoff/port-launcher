@@ -1,0 +1,54 @@
+{
+  "spec": 0,
+  "id": "zelda64-recomp",
+  "name": "Zelda 64: Recompiled",
+  "version": "1.2.2-recomp-frontend+plm.0",
+  "family": "n64recomp",
+  "maturity": "experimental",
+  "native_launcher": true,
+  "upstream": {
+    "repo": "https://github.com/Zelda64Recomp/Zelda64Recomp",
+    "commit": "@UPSTREAM_COMMIT@"
+  },
+  "license": "GPL-3.0-only",
+  "host": {
+    "type": "sdl2",
+    "sdl": "2.32"
+  },
+  "abi": 0,
+  "platforms": [
+    "android-arm64"
+  ],
+  "graphics": {
+    "api": "vulkan",
+    "min_version": "1.2"
+  },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.majoras-mask.us-1.0",
+      "title": "The Legend of Zelda: Majora's Mask",
+      "game_code": "NZSE",
+      "region": "US",
+      "revision": "1.0",
+      "sha1": [
+        "d6133ace5afaa0882cf214cf88daba39e266c078"
+      ]
+    }
+  ],
+  "capabilities": {
+    "mods": [
+      "nrm"
+    ],
+    "texture_packs": [
+      "rtz"
+    ],
+    "achievements": false
+  },
+  "mod_sources": [
+    {
+      "type": "thunderstore",
+      "community": "zelda-64-recompiled"
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+--- a/src/video/android/SDL_androidevents.c	2026-11-16 13:34:29.257653490 +1100
++++ b/src/video/android/SDL_androidevents.c	2026-11-16 13:35:03.004630551 +1100
+@@ -30,6 +30,10 @@
+ #include "../SDL_sysvideo.h"
+ #include "../../events/SDL_events_c.h"
+ 
++#include "SDL_timer.h"
++#include <android/log.h>
++#include <unistd.h>
++
+ /* Can't include sysaudio "../../audio/android/SDL_androidaudio.h"
+  * because of THIS redefinition */
+ 
+@@ -77,6 +81,8 @@
+ 
+ static void android_egl_context_restore(SDL_Window *window)
+ {
++    __android_log_print(ANDROID_LOG_INFO, "SDL", "plm-pause: tid %d restores (held the context: %d)",
++                        (int)gettid(), plm_held_context);
+     if (window && !plm_held_context) {
+         /* Another thread renders: it rebinds on its next swap (Android_GLES_SwapWindow). */
+         ((SDL_WindowData *)window->driverdata)->backup_done = 0;
+@@ -122,29 +128,103 @@
+  * No polling necessary
+  */
+ 
++/* port-launcher (sleep/wake fix, 2026-11-16): SDL assumes one thread pumps events. Ports that pump on two
++ * (GoldenEye: its main loop and its render thread both call SDL_PollEvent) both saw the shared isPaused flag and
++ * both blocked in SDL_SemWait(Android_ResumeSem), but nativeResume posts that semaphore once: one thread woke, the
++ * other stayed blocked until the next pause/resume (Home and reopen), so after a lock screen the game thread
++ * produced nothing. Now one thread owns the wait (it consumes the resume signal, sends the app events and pauses or
++ * resumes audio) and every other pumping thread follows it: it releases its GL context like the owner, sleeps until
++ * the owner's resume generation changes, then restores its own context. A follower takes over ownership if nobody
++ * holds it, so a thread can never wait for an owner that isn't coming. The plm-pause log lines show who did what. */
++static SDL_atomic_t plm_pause_owner;      /* 1 while a thread is blocked in SDL_SemWait(Android_ResumeSem) */
++static SDL_atomic_t plm_resume_generation; /* bumped by the owner after each resume (after isPaused = 0) */
++
++static void plm_egl_backup(SDL_bool isContextExternal)
++{
++#ifdef SDL_VIDEO_OPENGL_EGL
++    if (!isContextExternal) {
++        SDL_LockMutex(Android_ActivityMutex);
++        android_egl_context_backup(Android_Window);
++        SDL_UnlockMutex(Android_ActivityMutex);
++    }
++#endif
++}
++
++static void plm_egl_restore(SDL_bool isContextExternal)
++{
++#ifdef SDL_VIDEO_OPENGL_EGL
++    if (!isContextExternal && !SDL_HasEvent(SDL_QUIT)) {
++        SDL_LockMutex(Android_ActivityMutex);
++        android_egl_context_restore(Android_Window);
++        SDL_UnlockMutex(Android_ActivityMutex);
++    }
++#endif
++}
++
++/* Waits until the owner has resumed, or takes over the wait when nobody owns it (then *become_owner is set). */
++static void plm_follow_pause(SDL_VideoData *videodata, int generation, SDL_bool *become_owner)
++{
++    int waited_ms = 0;
++    *become_owner = SDL_FALSE;
++    __android_log_print(ANDROID_LOG_INFO, "SDL", "plm-pause: tid %d follows the paused owner", (int)gettid());
++    for (;;) {
++        SDL_MemoryBarrierAcquire();
++        if (SDL_AtomicGet(&plm_resume_generation) != generation || !videodata->isPaused) {
++            break;
++        }
++        if (SDL_AtomicCAS(&plm_pause_owner, 0, 1)) {
++            *become_owner = SDL_TRUE;
++            __android_log_print(ANDROID_LOG_INFO, "SDL", "plm-pause: tid %d took over the wait", (int)gettid());
++            return;
++        }
++        SDL_Delay(5);
++        waited_ms += 5;
++    }
++    __android_log_print(ANDROID_LOG_INFO, "SDL", "plm-pause: tid %d resumed after the owner (%d ms)",
++                        (int)gettid(), waited_ms);
++}
++
+ void Android_PumpEvents_Blocking(_THIS)
+ {
+     SDL_VideoData *videodata = (SDL_VideoData *)_this->driverdata;
+ 
+     if (videodata->isPaused) {
+         SDL_bool isContextExternal = SDL_IsVideoContextExternal();
++        /* Read the generation before re-checking isPaused: the owner sets isPaused = 0 before bumping it, so a
++         * resume that lands in between is seen by one of the two checks. */
++        int generation = SDL_AtomicGet(&plm_resume_generation);
++        SDL_bool owner;
++
++        SDL_MemoryBarrierAcquire();
++        if (!videodata->isPaused) {
++            return;
++        }
+ 
+-#ifdef SDL_VIDEO_OPENGL_EGL
+-        /* Make sure this is the last thing we do before pausing */
+-        if (!isContextExternal) {
+-            SDL_LockMutex(Android_ActivityMutex);
+-            android_egl_context_backup(Android_Window);
+-            SDL_UnlockMutex(Android_ActivityMutex);
++        /* Make sure this is the last thing we do before pausing (every pumping thread lets go of its context) */
++        plm_egl_backup(isContextExternal);
++
++        owner = SDL_AtomicCAS(&plm_pause_owner, 0, 1);
++        if (!owner) {
++            plm_follow_pause(videodata, generation, &owner);
++            if (!owner) {
++                plm_egl_restore(isContextExternal);
++                return;
++            }
+         }
+-#endif
+ 
++        __android_log_print(ANDROID_LOG_INFO, "SDL", "plm-pause: tid %d owns the wait for nativeResume",
++                            (int)gettid());
+         ANDROIDAUDIO_PauseDevices();
+         openslES_PauseDevices();
+         aaudio_PauseDevices();
+ 
+         if (SDL_SemWait(Android_ResumeSem) == 0) {
+ 
++            __android_log_print(ANDROID_LOG_INFO, "SDL", "plm-pause: tid %d woke on nativeResume", (int)gettid());
+             videodata->isPaused = 0;
++            SDL_MemoryBarrierRelease();
++            SDL_AtomicIncRef(&plm_resume_generation);
++            SDL_AtomicSet(&plm_pause_owner, 0);
+ 
+             /* Android_ResumeSem was signaled */
+             SDL_SendAppEvent(SDL_APP_WILLENTERFOREGROUND);
+@@ -156,21 +236,19 @@
+             aaudio_ResumeDevices();
+ 
+             /* Restore the GL Context from here, as this operation is thread dependent */
+-#ifdef SDL_VIDEO_OPENGL_EGL
+-            if (!isContextExternal && !SDL_HasEvent(SDL_QUIT)) {
+-                SDL_LockMutex(Android_ActivityMutex);
+-                android_egl_context_restore(Android_Window);
+-                SDL_UnlockMutex(Android_ActivityMutex);
+-            }
+-#endif
++            plm_egl_restore(isContextExternal);
+ 
+             /* Make sure SW Keyboard is restored when an app becomes foreground */
+             Android_RestoreScreenKeyboardOnResume(_this, Android_Window);
++        } else {
++            SDL_AtomicSet(&plm_pause_owner, 0);
+         }
+     } else {
+         if (videodata->isPausing || SDL_SemTryWait(Android_PauseSem) == 0) {
+ 
+             /* Android_PauseSem was signaled */
++            __android_log_print(ANDROID_LOG_INFO, "SDL", "plm-pause: tid %d saw nativePause (pausing %d)",
++                                (int)gettid(), videodata->isPausing);
+             if (videodata->isPausing == 0) {
+                 SDL_SendWindowEvent(Android_Window, SDL_WINDOWEVENT_MINIMIZED, 0, 0);
+                 SDL_SendAppEvent(SDL_APP_WILLENTERBACKGROUND);

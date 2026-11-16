@@ -1,0 +1,57 @@
+{
+  "spec": 0,
+  "id": "goldeneye",
+  "name": "GoldenEye 007 (PC port)",
+  "version": "0.6.0+plm.15",
+  "family": "decomp-port",
+  "maturity": "experimental",
+  "upstream": { "repo": "https://github.com/jkdansereau/goldeneye-pc-port", "commit": "@UPSTREAM_COMMIT@" },
+  "license": "MIT",
+  "credits": "jkdansereau and the GoldenEye 007 PC port contributors; KholdFuzion and the GoldenEye 007 decompilation contributors",
+  "host": { "type": "sdl2", "sdl": "2.32" },
+  "abi": 0,
+  "platforms": ["android-arm64"],
+  "graphics": { "api": "gles", "min_version": "3.0" },
+  "min_android_api": 28,
+  "games": [
+    {
+      "id": "n64.goldeneye.us",
+      "title": "GoldenEye 007", "game_code": "NGEE",
+      "region": "US", "revision": "1.0",
+      "sha1": ["abe01e4aeb033b6c0836819f549c791b26cfde83"]
+    }
+  ],
+  "capabilities": { "mods": [], "texture_packs": [], "achievements": false },
+  "mods": {
+    "builtin": [
+      {
+        "id": "steady-aim",
+        "name": "Steady aim",
+        "setting": "Plm.SteadyAim",
+        "default": true,
+        "description": "With the Centred aim mode, standing still no longer sways the view with Bond's breathing: the view stays level and centred."
+      },
+      {
+        "id": "quick-weapon-select",
+        "name": "Quick weapon select",
+        "setting": "Plm.QuickWeaponSelect",
+        "default": true,
+        "description": "Hold next weapon to open a list of everything you carry (gadgets too); move with the stick or D-pad, release to equip. The game pauses while it's open. Works in the tank too. A tap still cycles."
+      },
+      {
+        "id": "instant-pause",
+        "name": "Instant pause",
+        "setting": "Plm.InstantPause",
+        "default": true,
+        "description": "The world stops the moment you press Start and starts again only when you have control back: no vulnerable frames while the watch comes up or goes away."
+      },
+      {
+        "id": "complexity-difficulty",
+        "name": "Complexity and difficulty",
+        "setting": "Plm.SplitDifficulty",
+        "default": true,
+        "description": "The difficulty screen asks twice: complexity (objectives, guards and objects; it unlocks missions as before), then enemy difficulty (accuracy, damage, health, ammo). Easier enemies than the complexity save no best time and earn no cheat."
+      }
+    ]
+  }
+}

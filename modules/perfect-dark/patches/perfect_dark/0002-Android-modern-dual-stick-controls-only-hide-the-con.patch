@@ -1,0 +1,105 @@
+From 9985bcfc7d26250518fceb971beed1a188e4323c Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 19:31:34 +1100
+Subject: [PATCH] Android: modern dual-stick controls only; hide the control
+ style menus
+
+---
+ src/game/mainmenu.c      | 22 ++++++++++++++++++++++
+ src/game/mplayer/setup.c |  6 ++++++
+ src/game/options.c       |  6 ++++++
+ 3 files changed, 34 insertions(+)
+
+diff --git a/src/game/mainmenu.c b/src/game/mainmenu.c
+index a69146c96..a0d1d7424 100644
+--- a/src/game/mainmenu.c
++++ b/src/game/mainmenu.c
+@@ -2222,6 +2222,12 @@ MenuItemHandlerResult menuhandlerLangFilter(s32 operation, struct menuitem *item
+ 
+ MenuItemHandlerResult menuhandlerControlStyle(s32 operation, struct menuitem *item, union handlerdata *data)
+ {
++#ifdef __ANDROID__
++	// Port-launcher: the control style is fixed to modern dual-stick (optionsGetControlMode).
++	if (operation == MENUOP_CHECKHIDDEN) {
++		return true;
++	}
++#endif
+ 	if (operation == MENUOP_SET) {
+ 		if (PLAYERCOUNT() >= 2) {
+ 			menuPushDialog(&g_2PMissionControlStyleMenuDialog);
+@@ -3250,10 +3256,18 @@ struct menuitem g_CiControlOptionsMenuItems[] = {
+ 	{
+ 		MENUITEMTYPE_SELECTABLE,
+ 		0,
++		#ifdef __ANDROID__
++		0,
++#else
+ 		MENUITEMFLAG_SELECTABLE_OPENSDIALOG,
++#endif
+ 		L_OPTIONS_194, // "Control Style"
+ 		(uintptr_t)&func0f105664,
++		#ifdef __ANDROID__
++		menuhandlerControlStyle, // hidden on Android
++#else
+ 		(void *)&g_CiControlStyleMenuDialog,
++#endif
+ 	},
+ 	{
+ 		MENUITEMTYPE_CHECKBOX,
+@@ -3327,10 +3341,18 @@ struct menuitem g_CiControlPlayer2MenuItems[] = {
+ 	{
+ 		MENUITEMTYPE_SELECTABLE,
+ 		0,
++		#ifdef __ANDROID__
++		0,
++#else
+ 		MENUITEMFLAG_SELECTABLE_OPENSDIALOG,
++#endif
+ 		L_OPTIONS_194, // "Control Style"
+ 		(uintptr_t)&func0f1056a0,
++		#ifdef __ANDROID__
++		menuhandlerControlStyle, // hidden on Android
++#else
+ 		(void *)&g_CiControlStylePlayer2MenuDialog,
++#endif
+ 	},
+ 	{
+ 		MENUITEMTYPE_CHECKBOX,
+diff --git a/src/game/mplayer/setup.c b/src/game/mplayer/setup.c
+index 6821cb51d..46e4bc59b 100644
+--- a/src/game/mplayer/setup.c
++++ b/src/game/mplayer/setup.c
+@@ -259,6 +259,12 @@ MenuItemHandlerResult mpArenaMenuHandler(s32 operation, struct menuitem *item, u
+ 
+ MenuItemHandlerResult menuhandlerMpControlStyle(s32 operation, struct menuitem *item, union handlerdata *data)
+ {
++#ifdef __ANDROID__
++	// Port-launcher: the control style is fixed to modern dual-stick (optionsGetControlMode).
++	if (operation == MENUOP_CHECKHIDDEN) {
++		return true;
++	}
++#endif
+ 	u16 labels[] = {
+ 		L_OPTIONS_239, // "1.1"
+ 		L_OPTIONS_240, // "1.2"
+diff --git a/src/game/options.c b/src/game/options.c
+index d8ff82093..94706db5f 100644
+--- a/src/game/options.c
++++ b/src/game/options.c
+@@ -26,7 +26,13 @@ u16 var8008231cnb = 0x7fff;
+ 
+ s32 optionsGetControlMode(s32 mpchrnum)
+ {
++#ifdef __ANDROID__
++	// Port-launcher: modern dual-stick controls only (the port's PC style); the control style menus are hidden.
++	(void)g_PlayerConfigsArray[mpchrnum].controlmode;
++	return CONTROLMODE_PC;
++#else
+ 	return g_PlayerConfigsArray[mpchrnum].controlmode;
++#endif
+ }
+ 
+ void optionsSetControlMode(s32 mpchrnum, s32 mode)
+-- 
+2.43.0
+

@@ -1,0 +1,46 @@
+From 4a6ab10b9e5f563cbff0deb7e4d4a8879a26ea73 Mon Sep 17 00:00:00 2001
+From: plm <plm@localhost>
+Date: Sun, 15 Nov 2026 15:18:19 +1100
+Subject: [PATCH] Android: in the Modern scheme the right stick is the
+ C-buttons while crouched
+
+---
+ libultraship                           |  2 +-
+ src/port/Controller/ControlSchemes.cpp | 14 ++++++++++++++
+ 2 files changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/libultraship b/libultraship
+index db5dbfa6..03d93206 160000
+--- a/libultraship
++++ b/libultraship
+@@ -1 +1 @@
+-Subproject commit db5dbfa69b8d07003842045d2296fd73fc0e2563
++Subproject commit 03d932067aee084e02a70105d8b362589122c72c
+diff --git a/src/port/Controller/ControlSchemes.cpp b/src/port/Controller/ControlSchemes.cpp
+index fe44637f..3e2a425e 100644
+--- a/src/port/Controller/ControlSchemes.cpp
++++ b/src/port/Controller/ControlSchemes.cpp
+@@ -325,6 +325,20 @@ static void ShapeControllerInput(OSContPad* pad) {
+                 sStickArmed = false;
+             }
+             pad->button = (pad->button & ~(BTN_CLEFT | BTN_CRIGHT)) | allow;
++#ifdef __ANDROID__
++            // [port launcher] While crouched, the right stick is the C-buttons (owner 2026-11-12/15): up fires an egg
++            // forward (C-up), down one backward (C-down), left is C-left; right stays upstream's one-per-push
++            // Wonderwing above. Free look ignores the stick while Z is held (patch 0008), so nothing else reads it.
++            // The dominant axis wins, past half deflection, so a diagonal doesn't fire two moves at once.
++            if (crouched) {
++                constexpr int32_t kThreshold = 64;
++                if (ary > arx && ary >= kThreshold) {
++                    pad->button |= (ry > 0) ? BTN_CUP : BTN_CDOWN;
++                } else if (arx > ary && arx >= kThreshold && rx < 0) {
++                    pad->button |= BTN_CLEFT;
++                }
++            }
++#endif
+         }
+     } else {
+         uint16_t axisMask = 0;
+-- 
+2.43.0
+

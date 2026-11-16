@@ -1,0 +1,396 @@
+From f9f0e92c3c3bd76bb84c07d29b0bfa4f6c1871f3 Mon Sep 17 00:00:00 2001
+From: Alexander Ottenhoff <AlexanderOttenhoff@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 03:07:24 +1100
+Subject: [PATCH] Android build and direct start (--rom, --skip-launcher,
+ --game-mode)
+
+- CMake: the game is a shared library on Android; SDL2 found before the
+  subprojects; a stub nfd target (no native file dialogs); file_to_c and
+  DXC run on the build machine (RT64_HOST_FILE_TO_C, host CPU).
+- RT64 presents to the ANativeWindow behind SDL's window, in RGBA8; the
+  menu renderer's swap-chain format matches.
+- No window icon on Android (__gnu_linux__ only); <sstream> for libc++.
+- --rom selects and validates the ROM, --skip-launcher starts the game
+  without the launcher; --game-mode is accepted and ignored (this
+  runtime has no custom game modes).
+
+Same change as our Mega Man 64: Recompiled patch: both projects are
+copies of Zelda64Recomp's dev-branch frontend.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ CMakeLists.txt                   |  32 +++++--
+ src/android/nfd_android_stub.cpp | 147 +++++++++++++++++++++++++++++++
+ src/main/main.cpp                |  33 ++++++-
+ src/main/rt64_render_context.cpp |  12 ++-
+ src/ui/ui_renderer.cpp           |   5 ++
+ src/ui/ui_state.cpp              |   1 +
+ 6 files changed, 221 insertions(+), 9 deletions(-)
+ create mode 100644 src/android/nfd_android_stub.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c104f86..42fa30f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -49,6 +49,16 @@ if (RECOMP_FLATPAK)
+     add_compile_definitions(RECOMP_FLATPAK)
+ endif()
+ 
++# Android: find SDL2 before the subprojects, so they see SDL2_INCLUDE_DIRS, and give RT64 a stub nfd target (Android
++# has no native file dialogs; the ROM comes from the port launcher via --rom).
++if (ANDROID)
++    find_package(SDL2 REQUIRED)
++    if (NOT TARGET nfd)
++        add_library(nfd STATIC ${CMAKE_SOURCE_DIR}/src/android/nfd_android_stub.cpp)
++        target_include_directories(nfd PUBLIC ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib/nativefiledialog-extended/src/include)
++    endif()
++endif()
++
+ add_subdirectory(${CMAKE_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
+ 
+ # set(BUILD_SHARED_LIBS_SAVED "${BUILD_SHARED_LIBS}")
+@@ -128,7 +138,7 @@ add_custom_target(PatchesBin
+ 
+ # Generate patches_bin.c from patches.bin
+ add_custom_command(OUTPUT ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c
+-    COMMAND file_to_c ${CMAKE_SOURCE_DIR}/patches/patches.bin mm_patches_bin ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.h
++    COMMAND ${RT64_HOST_FILE_TO_C} ${CMAKE_SOURCE_DIR}/patches/patches.bin mm_patches_bin ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.c ${CMAKE_SOURCE_DIR}/RecompiledPatches/patches_bin.h
+     DEPENDS ${CMAKE_SOURCE_DIR}/patches/patches.bin
+ )
+ 
+@@ -145,7 +155,12 @@ add_custom_command(OUTPUT
+ )
+ 
+ # Main executable
+-add_executable(BM64Recompiled)
++# On Android the game is a shared library (the port launcher's module, see module.cmake).
++if (ANDROID)
++    add_library(BM64Recompiled SHARED)
++else()
++    add_executable(BM64Recompiled)
++endif()
+ 
+ set (SOURCES
+     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
+@@ -311,6 +326,13 @@ if (APPLE)
+     include(${CMAKE_SOURCE_DIR}/.github/macos/apple_bundle.cmake)
+ endif()
+ 
++if (ANDROID)
++    add_compile_definitions("PLUME_SDL_VULKAN_ENABLED")
++    add_compile_definitions("RT64_SDL_WINDOW_VULKAN")
++    target_include_directories(BM64Recompiled PRIVATE ${SDL2_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS})
++    target_link_libraries(BM64Recompiled PRIVATE ${FREETYPE_LIBRARY} SDL2::SDL2 android log)
++endif()
++
+ if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+     find_package(SDL2 REQUIRED)
+     find_package(X11 REQUIRED)
+@@ -319,7 +341,7 @@ if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+ 
+     # Generate icon_bytes.c from the app icon PNG.
+     add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.c ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.h
+-        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/icons/512.png icon_bytes ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.c ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.h
++        COMMAND ${RT64_HOST_FILE_TO_C} ${CMAKE_SOURCE_DIR}/icons/512.png icon_bytes ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.c ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.h
+         DEPENDS ${CMAKE_SOURCE_DIR}/icons/512.png
+     )
+     target_sources(BM64Recompiled PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/icon_bytes.c)
+@@ -389,7 +411,7 @@ else()
+             set(SPIRVCROSS "DYLD_LIBRARY_PATH=${PROJECT_SOURCE_DIR}/lib/rt64/src/contrib/spirv-cross/lib/arm64" "${PROJECT_SOURCE_DIR}/lib/rt64//src/contrib/spirv-cross/bin/x64/spirv-cross")
+         endif()
+     else()
+-        if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
++        if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64") # the build machine runs DXC
+             set (DXC "LD_LIBRARY_PATH=${PROJECT_SOURCE_DIR}/lib/rt64/src/contrib/dxc/lib/x64" "${PROJECT_SOURCE_DIR}/lib/rt64/src/contrib/dxc/bin/x64/dxc-linux")
+         else()
+             set (DXC "LD_LIBRARY_PATH=${PROJECT_SOURCE_DIR}/lib/rt64/src/contrib/dxc/lib/arm64" "${PROJECT_SOURCE_DIR}/lib/rt64/src/contrib/dxc/bin/arm64/dxc-linux")
+@@ -412,7 +434,7 @@ foreach(NRM_FILE ${NRM_FILES})
+ 
+     add_custom_command(
+         OUTPUT ${OUT_C} ${OUT_H}
+-        COMMAND file_to_c ${NRM_FILE} ${NRM_NAME} ${OUT_C} ${OUT_H}
++        COMMAND ${RT64_HOST_FILE_TO_C} ${NRM_FILE} ${NRM_NAME} ${OUT_C} ${OUT_H}
+         DEPENDS ${NRM_FILE}
+     )
+ 
+diff --git a/src/android/nfd_android_stub.cpp b/src/android/nfd_android_stub.cpp
+new file mode 100644
+index 0000000..cc946a4
+--- /dev/null
++++ b/src/android/nfd_android_stub.cpp
+@@ -0,0 +1,147 @@
++// Android has no native file dialog backend; file dialogs report cancel. Via JFG Android port.
++// From Zelda64Recomp-Android (linkzenic).
++#include "nfd.h"
++
++#include <cstdlib>
++
++namespace {
++constexpr const char* kUnavailable = "Native file dialogs are unavailable on Android.";
++}
++
++extern "C" {
++
++NFD_API void NFD_FreePathN(nfdnchar_t* filePath) {
++    std::free(filePath);
++}
++
++NFD_API void NFD_FreePathU8(nfdu8char_t* filePath) {
++    std::free(filePath);
++}
++
++NFD_API nfdresult_t NFD_Init(void) {
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_Quit(void) {
++}
++
++NFD_API nfdresult_t NFD_OpenDialogN(nfdnchar_t** outPath, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogU8(nfdu8char_t** outPath, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogMultipleN(const nfdpathset_t** outPaths, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*) {
++    if (outPaths != nullptr) {
++        *outPaths = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_OpenDialogMultipleU8(const nfdpathset_t** outPaths, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*) {
++    if (outPaths != nullptr) {
++        *outPaths = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_SaveDialogN(nfdnchar_t** outPath, const nfdnfilteritem_t*, nfdfiltersize_t, const nfdnchar_t*, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_SaveDialogU8(nfdu8char_t** outPath, const nfdu8filteritem_t*, nfdfiltersize_t, const nfdu8char_t*, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_PickFolderN(nfdnchar_t** outPath, const nfdnchar_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API nfdresult_t NFD_PickFolderU8(nfdu8char_t** outPath, const nfdu8char_t*) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_CANCEL;
++}
++
++NFD_API const char* NFD_GetError(void) {
++    return kUnavailable;
++}
++
++NFD_API void NFD_ClearError(void) {
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetCount(const nfdpathset_t*, nfdpathsetsize_t* count) {
++    if (count != nullptr) {
++        *count = 0;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetPathN(const nfdpathset_t*, nfdpathsetsize_t, nfdnchar_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_ERROR;
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetPathU8(const nfdpathset_t*, nfdpathsetsize_t, nfdu8char_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_ERROR;
++}
++
++NFD_API void NFD_PathSet_FreePathN(const nfdnchar_t* filePath) {
++    std::free(const_cast<nfdnchar_t*>(filePath));
++}
++
++NFD_API void NFD_PathSet_FreePathU8(const nfdu8char_t* filePath) {
++    std::free(const_cast<nfdu8char_t*>(filePath));
++}
++
++NFD_API nfdresult_t NFD_PathSet_GetEnum(const nfdpathset_t*, nfdpathsetenum_t* outEnumerator) {
++    if (outEnumerator != nullptr) {
++        outEnumerator->ptr = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_PathSet_FreeEnum(nfdpathsetenum_t*) {
++}
++
++NFD_API nfdresult_t NFD_PathSet_EnumNextN(nfdpathsetenum_t*, nfdnchar_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API nfdresult_t NFD_PathSet_EnumNextU8(nfdpathsetenum_t*, nfdu8char_t** outPath) {
++    if (outPath != nullptr) {
++        *outPath = nullptr;
++    }
++    return NFD_OKAY;
++}
++
++NFD_API void NFD_PathSet_Free(const nfdpathset_t*) {
++}
++
++}
+diff --git a/src/main/main.cpp b/src/main/main.cpp
+index 85b7514..2b3ae90 100644
+--- a/src/main/main.cpp
++++ b/src/main/main.cpp
+@@ -7,6 +7,7 @@
+ #include <numeric>
+ #include <stdexcept>
+ #include <cinttypes>
++#include <cstring>
+ 
+ #include "nfd.h"
+ 
+@@ -147,7 +148,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
+ #endif
+ 
+     window = SDL_CreateWindow("Bomberman 64: Recompiled", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1600, 960,  flags);
+-#if defined(__linux__)
++#if defined(__gnu_linux__) // as SetImageAsIcon itself; Android defines __linux__ but has no window icons
+     SetImageAsIcon("icons/512.png",window);
+     if (ultramodern::renderer::get_graphics_config().wm_option == ultramodern::renderer::WindowMode::Fullscreen) { // TODO: Remove once RT64 gets native fullscreen support on Linux
+         SDL_SetWindowFullscreen(window,SDL_WINDOW_FULLSCREEN_DESKTOP);
+@@ -528,9 +529,23 @@ void reorder_texture_pack(recomp::mods::ModContext&) {
+ 
+ #define REGISTER_FUNC(name) recomp::overlays::register_base_export(#name, name)
+ 
++// Arguments for launchers and handhelds, on every platform:
++//   --rom <path>      select and validate a ROM without the launcher's file picker
++//   --skip-launcher   start the game directly once a valid ROM is stored
++//   --game-mode <id>  accepted for launcher compatibility and ignored: this runtime has no custom game modes
++static const char* cli_rom_path = nullptr;
++static bool cli_skip_launcher = false;
++
+ int main(int argc, char** argv) {
+-    (void)argc;
+-    (void)argv;
++    for (int i = 1; i < argc; i++) {
++        if (strcmp(argv[i], "--rom") == 0 && i + 1 < argc) {
++            cli_rom_path = argv[++i];
++        } else if (strcmp(argv[i], "--skip-launcher") == 0) {
++            cli_skip_launcher = true;
++        } else if (strcmp(argv[i], "--game-mode") == 0 && i + 1 < argc) {
++            ++i;
++        }
++    }
+     recomp::Version project_version{};
+     if (!recomp::Version::from_string(version_string, project_version)) {
+         ultramodern::error_handling::message_box(("Invalid version string: " + version_string).c_str());
+@@ -684,6 +699,18 @@ int main(int argc, char** argv) {
+     // Register the .rtz texture pack file format with the previous content type as its only allowed content type.
+     recomp::mods::register_mod_container_type("rtz", std::vector{ texture_pack_content_type_id }, false);
+ 
++    if (cli_rom_path != nullptr) {
++        recomp::RomValidationError rom_error = recomp::select_rom(cli_rom_path, supported_games[0].game_id);
++        fprintf(stderr, "--rom %s: %s\n", cli_rom_path,
++            rom_error == recomp::RomValidationError::Good ? "accepted" : "rejected (wrong or modified ROM)");
++    }
++    if (cli_skip_launcher && recomp::is_rom_valid(supported_games[0].game_id)) {
++        // As the launcher's "start_game" event does (ui_launcher.cpp). Calling it before recomp::start relies on the
++        // runtime's "always call set_dummy_vi at least once" fix (modules/banjo-recomp/patches/N64ModernRuntime).
++        recomp::start_game(supported_games[0].game_id);
++        recompui::hide_all_contexts();
++    }
++
+     recomp::Configuration cfg{
+         .project_version = project_version,
+         .window_handle = {},
+diff --git a/src/main/rt64_render_context.cpp b/src/main/rt64_render_context.cpp
+index 9e43fef..bb6198a 100644
+--- a/src/main/rt64_render_context.cpp
++++ b/src/main/rt64_render_context.cpp
+@@ -5,6 +5,9 @@
+ 
+ #define HLSL_CPU
+ #include "hle/rt64_application.h"
++#ifdef __ANDROID__
++#include <SDL_syswm.h> // the ANativeWindow behind SDL's window, for RT64
++#endif
+ #include "rt64_render_hooks.h"
+ #include "overloaded.h"
+ 
+@@ -210,7 +213,14 @@ zelda64::renderer::RT64Context::RT64Context(uint8_t* rdram, ultramodern::rendere
+     RT64::Application::Core appCore{};
+ #if defined(_WIN32)
+     appCore.window = window_handle.window;
+-#elif defined(__linux__) || defined(__ANDROID__)
++#elif defined(__ANDROID__)
++    {
++        SDL_SysWMinfo wm_info;
++        SDL_VERSION(&wm_info.version);
++        SDL_GetWindowWMInfo(window_handle, &wm_info);
++        appCore.window = wm_info.info.android.window;
++    }
++#elif defined(__linux__)
+     appCore.window = window_handle;
+ #elif defined(__APPLE__)
+     appCore.window.window = window_handle.window;
+diff --git a/src/ui/ui_renderer.cpp b/src/ui/ui_renderer.cpp
+index 92a498d..d5e783f 100644
+--- a/src/ui/ui_renderer.cpp
++++ b/src/ui/ui_renderer.cpp
+@@ -103,7 +103,12 @@ class RmlRenderInterface_RT64_impl : public Rml::RenderInterfaceCompatibility {
+     static constexpr uint32_t initial_index_buffer_size = 1024 * sizeof(int);
+     static constexpr plume::RenderFormat RmlTextureFormat = plume::RenderFormat::R8G8B8A8_UNORM;
+     static constexpr plume::RenderFormat RmlTextureFormatBgra = plume::RenderFormat::B8G8R8A8_UNORM;
++#ifdef __ANDROID__
++    // RT64 presents RGBA8 on Android (modules/*/patches/rt64 "RGBA8 presentation"), so the menus must match.
++    static constexpr plume::RenderFormat SwapChainFormat = plume::RenderFormat::R8G8B8A8_UNORM;
++#else
+     static constexpr plume::RenderFormat SwapChainFormat = plume::RenderFormat::B8G8R8A8_UNORM;
++#endif
+     static constexpr uint32_t RmlTextureFormatBytesPerPixel = RenderFormatSize(RmlTextureFormat);
+     static_assert(RenderFormatSize(RmlTextureFormatBgra) == RmlTextureFormatBytesPerPixel);
+     plume::RenderInterface* interface_;
+diff --git a/src/ui/ui_state.cpp b/src/ui/ui_state.cpp
+index 7fad31e..f2b4255 100644
+--- a/src/ui/ui_state.cpp
++++ b/src/ui/ui_state.cpp
+@@ -5,6 +5,7 @@
+ #include <SDL2/SDL_video.h>
+ #endif
+ #include <chrono>
++#include <sstream> // std::ostringstream; libc++ (NDK) doesn't pull it in transitively
+ 
+ #include "rt64_render_hooks.h"
+ 
+-- 
+2.43.0
+
